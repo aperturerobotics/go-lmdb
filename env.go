@@ -98,6 +98,26 @@ func (self *environment) txnBegin(readOnlyTxn bool) (txn *C.MDB_txn, err error) 
 	return
 }
 
+// mdb_env_sync. http://www.lmdb.tech/doc/group__mdb.html#ga85e61f05aa68b520cc6c3b981dba5037
+func (self *environment) sync(force bool) error {
+	forceNum := 0
+	if force {
+		forceNum = 1
+	}
+	return asError(C.mdb_env_sync(self.env, C.int(forceNum)))
+}
+
+// mdb_env_copy2. http://www.lmdb.tech/doc/group__mdb.html#ga3bf50d7793b36aaddf6b481a44e24244
+func (self *environment) copy(path string, compact bool) error {
+	cPath := C.CString(path)
+	defer C.free(unsafe.Pointer(cPath))
+	flags := C.uint(0)
+	if compact {
+		flags = copyCompact
+	}
+	return asError(C.mdb_env_copy2(self.env, cPath, flags))
+}
+
 // NewLMDB opens an LMDB database at the given path, creating it if
 // necessary, and returns a client to that LMDB database.
 //

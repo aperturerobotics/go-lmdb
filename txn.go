@@ -47,6 +47,7 @@ func asValue(data []byte) *value {
 	ptr := C.malloc(C.sizeof_MDB_val + dataLen)
 	val := (*C.MDB_val)(ptr)
 	val.mv_size = dataLen
+	val.mv_data = nil
 
 	if len(data) > 0 {
 		ptr = unsafe.Add(ptr, C.sizeof_MDB_val)

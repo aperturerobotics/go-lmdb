@@ -138,11 +138,45 @@ func (self *LMDBClient) Update(fun func(rwtxn *ReadWriteTxn) error) error {
 // finished and shutdown before calling TerminateSync.
 //
 // Note that this does not call mdb_env_sync. So if you've opened the
-// database with NoSync or NoMetaSync or MapAsync then you're probably
-// going to lose some data.
+// database with NoSync or NoMetaSync or MapAsync then you will need
+// to call Sync() before TerminateSync()
 func (self *LMDBClient) TerminateSync() {
 	self.ClientBase.TerminateSync()
 	self.environment.close()
+}
+
+// Manually sync the database to disk.
+//
+// See http://www.lmdb.tech/doc/group__mdb.html#ga85e61f05aa68b520cc6c3b981dba5037
+//
+// Unless you're using MapAsync or NoSync or NoMetaSync flags when
+// opening the LMDB database, you do not need to worry about calling
+// this. If you are using any of those flags then LMDB will not be
+// syncing data to disk on every transaction commit, which raises the
+// possibility of data loss or corruption in the event of a crash or
+// unexpected exit. Nevertheless, those flags are sometimes useful,
+// for example when rapidly loading a data set into the database. An
+// explicit call to Sync is then needed to flush everything through
+// onto disk.
+func (self *LMDBClient) Sync(force bool) error {
+	return self.environment.sync(force)
+}
+
+// Copy the entire database to a new path, optionally compacting it.
+//
+// See http://www.lmdb.tech/doc/group__mdb.html#ga3bf50d7793b36aaddf6b481a44e24244
+//
+// This can be done with the database in use: it allows you to take
+// backups of the dataset without stopping anything. However, as the
+// docs note, this is essentially a read-only transaction to read the
+// entire database and copy it out. If that takes a long time (because
+// it's a large database) and there are updates to the database going
+// on at the same time, then the original database can grow in size
+// due to needing to keep the old data around so that the read-only
+// transaction doing the copy sees a consistent snapshot of the entire
+// database.
+func (self *LMDBClient) Copy(path string, compact bool) error {
+	return self.environment.copy(path, compact)
 }
 
 // --- Server side ---

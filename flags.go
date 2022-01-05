@@ -34,7 +34,7 @@ const (
 	NoMemLimit  = EnvironmentFlag(C.MDB_NOMEMINIT)
 )
 
-// Used in calls to DBRef()
+// Used in calls to ReadOnlyTxn.DBRef()
 type DatabaseFlag C.uint
 
 // Database flags
@@ -50,7 +50,7 @@ const (
 	Create     = DatabaseFlag(C.MDB_CREATE)
 )
 
-// Used in calls to Put() and PutDupSort()
+// Used in calls to ReadWriteTxn.Put(), ReadWriteTxn.PutDupSort(), Cursor.Put(), and Cursor.PutDupSort()
 type PutFlag C.uint
 
 // Put flags
@@ -63,7 +63,41 @@ const (
 	Reserve     = PutFlag(C.MDB_RESERVE)
 	Append      = PutFlag(C.MDB_APPEND)
 	AppendDup   = PutFlag(C.MDB_APPENDDUP)
-	Multiple    = PutFlag(C.MDB_MULTIPLE)
+	multiple    = PutFlag(C.MDB_MULTIPLE) // not exported as the API doesn't support it
+)
+
+// Used in calls to Cursor.GetAndMove
+type CursorOp C.uint
+
+// Cursor ops
+//
+// See http://www.lmdb.tech/doc/group__mdb.html#ga1206b2af8b95e7f6b0ef6b28708c9127
+const (
+	First    = CursorOp(C.MDB_FIRST)     // Move to the start of the database. Return the key and value.
+	FirstDup = CursorOp(C.MDB_FIRST_DUP) // For DupSort only: move to the first value of the current key. Return the key and value.
+
+	Last    = CursorOp(C.MDB_LAST)     // Move to the end of the database. Return the key and value.
+	LastDup = CursorOp(C.MDB_LAST_DUP) // For DupSort only: move to the last value of the current key. Return the key and value.
+
+	GetCurrent = CursorOp(C.MDB_GET_CURRENT) // No movement. Return the current key and value.
+
+	GetBoth      = CursorOp(C.MDB_GET_BOTH)       // For DupSort only: move to the given key and value and return them.
+	GetBothRange = CursorOp(C.MDB_GET_BOTH_RANGE) // For DupSort only: move to the first key and value greater than or equal to the given key and value. Return the key and value.
+
+	Set      = CursorOp(C.MDB_SET)       // Move to the given key. Don't return anything.
+	SetKey   = CursorOp(C.MDB_SET_KEY)   // Move to the given key. Return the key and value.
+	SetRange = CursorOp(C.MDB_SET_RANGE) // Move to the first key and value greater than or equal to the given key. Return the key and value.
+
+	Next      = CursorOp(C.MDB_NEXT)       // Move to the next key-value pair. For DupSort databases, move to the next value of the current key, if there is one, otherwise the first value of the next key. Return the key and value.
+	NextDup   = CursorOp(C.MDB_NEXT_DUP)   // For DupSort only: move to the next value of the current key, if there is one. Return the key and value.
+	NextNoDup = CursorOp(C.MDB_NEXT_NODUP) // For DupSort only: move to the first value of the next key. Return the key and value.
+
+	Prev      = CursorOp(C.MDB_PREV)       // Move to the previous key-value pair. For DupSort databases, move to the previous value of the current key, if there is one, otherwise the last value of the previous key. Return the key and value.
+	PrevDup   = CursorOp(C.MDB_PREV_DUP)   // For DupSort only: move to the previous value of the current key, if there is one. Return the key and value.
+	PrevNoDup = CursorOp(C.MDB_PREV_NODUP) // For DupSort only: move to the last value of the previous key. Return the key and value.
+
+	getMultiple  = CursorOp(C.MDB_GET_MULTIPLE)  // not exported as the API doesn't support it
+	nextMultiple = CursorOp(C.MDB_NEXT_MULTIPLE) // not exported as the API doesn't support it
 )
 
 // Copy flags. http://www.lmdb.tech/doc/group__mdb__copy.html
