@@ -60,7 +60,7 @@ const (
 	NoOverwrite = PutFlag(C.MDB_NOOVERWRITE)
 	NoDupData   = PutFlag(C.MDB_NODUPDATA)
 	Current     = PutFlag(C.MDB_CURRENT)
-	Reserve     = PutFlag(C.MDB_RESERVE)
+	reserve     = PutFlag(C.MDB_RESERVE) // not exported as the API doesn't support it
 	Append      = PutFlag(C.MDB_APPEND)
 	AppendDup   = PutFlag(C.MDB_APPENDDUP)
 	multiple    = PutFlag(C.MDB_MULTIPLE) // not exported as the API doesn't support it

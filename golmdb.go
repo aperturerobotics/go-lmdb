@@ -1,6 +1,5 @@
 package golmdb
 
-/*
-#cgo LDFLAGS: -llmdb
-*/
+// #cgo CFLAGS: -g -Wall
+// #cgo LDFLAGS: -llmdb
 import "C"

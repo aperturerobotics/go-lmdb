@@ -1,6 +1,7 @@
 package golmdb_test
 
 import (
+	"bytes"
 	"encoding/binary"
 	"os"
 	"runtime"
@@ -53,9 +54,80 @@ func TestOpenClose(t *testing.T) {
 	is.NoErr(err)
 	defer os.RemoveAll(dir)
 
-	lmdb, err := golmdb.NewLMDB(log, dir, 0666, 16, 4, golmdb.WriteMap, 16)
+	client, err := golmdb.NewLMDB(log, dir, 0666, 16, 4, golmdb.WriteMap, 16)
 	is.NoErr(err)
-	lmdb.TerminateSync()
+	client.TerminateSync()
+}
+
+func TestWriteRead(t *testing.T) {
+	SetGlobalLogLevelDebug()
+	log := NewTestLogger(t)
+
+	is := is.New(t)
+	dir, err := os.MkdirTemp("", "golmdb")
+	is.NoErr(err)
+	defer os.RemoveAll(dir)
+
+	client, err := golmdb.NewLMDB(log, dir, 0666, 16, 4, golmdb.WriteMap, 16)
+	is.NoErr(err)
+
+	var db golmdb.DBRef
+	err = client.Update(func(txn *golmdb.ReadWriteTxn) (err error) {
+		db, err = txn.DBRef("test", golmdb.Create)
+		return
+	})
+	is.NoErr(err)
+
+	key := []byte("hello")
+	value := []byte("world")
+
+	err = client.Update(func(rwtxn *golmdb.ReadWriteTxn) error {
+		return rwtxn.Put(db, key, value, 0)
+	})
+	is.NoErr(err)
+
+	var valueRead []byte
+	err = client.View(func(rotxn *golmdb.ReadOnlyTxn) error {
+		valueRead, err = rotxn.Get(db, key)
+		return err
+	})
+	is.NoErr(err)
+	is.True(bytes.Equal(value, valueRead))
+	valueRead = nil
+
+	var keyRead []byte
+	err = client.View(func(rotxn *golmdb.ReadOnlyTxn) error {
+		cursor, err := rotxn.NewCursor(db)
+		if err != nil {
+			return err
+		}
+
+		keyRead, _, err = cursor.MoveAndGet(golmdb.Set, key, nil)
+
+		cursor.Close()
+		return err
+	})
+	is.NoErr(err)
+	is.True(bytes.Equal(key, keyRead))
+	keyRead = nil
+
+	err = client.View(func(rotxn *golmdb.ReadOnlyTxn) error {
+		cursor, err := rotxn.NewCursor(db)
+		if err != nil {
+			return err
+		}
+
+		keyRead, valueRead, err = cursor.MoveAndGet(golmdb.SetKey, key, nil)
+
+		cursor.Close()
+		return err
+	})
+	is.NoErr(err)
+	is.True(bytes.Equal(key, keyRead))
+	is.True(bytes.Equal(value, valueRead))
+
+	client.TerminateSync()
+
 }
 
 func TestProvokeResize(t *testing.T) {

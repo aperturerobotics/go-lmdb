@@ -1,9 +1,10 @@
 package golmdb
 
 /*
-#include <lmdb.h>
 #include <stdlib.h>
 #include <memory.h>
+#include <lmdb.h>
+#include "golmdb.h"
 */
 import "C"
 import "unsafe"
@@ -77,25 +78,28 @@ func (self *ReadOnlyCursor) Close() {
 // copy.
 //
 // See http://www.lmdb.tech/doc/group__mdb.html#ga48df35fb102536b32dfbb801a47b4cb0
-func (self *ReadOnlyCursor) MoveAndGet(move CursorOp, key, val []byte) (cursorAtKey, cursorAtVal []byte, err error) {
-	var keyVal value
-	var valVal value
+func (self *ReadOnlyCursor) MoveAndGet(move CursorOp, key, val []byte) (keyAtCursor, valAtCursor []byte, err error) {
+	var keyVal, valVal value
 
-	if key != nil {
-		keyVal.mv_size = C.size_t(len(key))
-		ptr := C.CBytes(key)
-		defer C.free(ptr)
-		keyVal.mv_data = ptr
+	switch {
+	case len(key) == 0:
+		// no key, so we must be doing something like GetCurrent, First, Last, Next.
+		err = asError(C.mdb_cursor_get(self.cursor, (*C.MDB_val)(&keyVal), (*C.MDB_val)(&valVal), C.MDB_cursor_op(move)))
+
+	case len(val) == 0:
+		// key is given though. So key must be being used; something like Set, SetRange.
+		err = asError(C.golmdb_mdb_cursor_get1(self.cursor,
+			(*C.char)(unsafe.Pointer(&key[0])), C.size_t(len(key)),
+			(*C.MDB_val)(&keyVal), (*C.MDB_val)(&valVal), C.MDB_cursor_op(move)))
+
+	default:
+		// both key and value given. Something like GetBoth, GetBothRange.
+		err = asError(C.golmdb_mdb_cursor_get2(self.cursor,
+			(*C.char)(unsafe.Pointer(&key[0])), C.size_t(len(key)),
+			(*C.char)(unsafe.Pointer(&val[0])), C.size_t(len(val)),
+			(*C.MDB_val)(&keyVal), (*C.MDB_val)(&valVal), C.MDB_cursor_op(move)))
 	}
 
-	if val != nil {
-		valVal.mv_size = C.size_t(len(val))
-		ptr := C.CBytes(val)
-		defer C.free(ptr)
-		valVal.mv_data = ptr
-	}
-
-	err = asError(C.mdb_cursor_get(self.cursor, (*C.MDB_val)(&keyVal), (*C.MDB_val)(&valVal), C.MDB_cursor_op(move)))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -112,49 +116,16 @@ func (self *ReadOnlyCursor) MoveAndGet(move CursorOp, key, val []byte) (cursorAt
 // normal ReadWriteTxn.Delete followed by ReadWriteTxn.Put. But that's
 // about it.
 //
-// As with ReadWriteTxn.Put, this method turns on the Reserve flag in
-// order to avoid one memcpy of the value. This makes it illegal for
-// DupSort databases. If using DupSort, you must call
-// Cursor.PutDupSort instead.
-//
 // If no error occurs, the cursor is positioned at the new key-value
 // pair.
 //
 // See http://www.lmdb.tech/doc/group__mdb.html#ga1f83ccb40011837ff37cc32be01ad91e
 func (self *ReadWriteCursor) Put(key, val []byte, flags PutFlag) error {
-	keyVal := asValue(key)
-
-	valSize := C.size_t(len(val))
-	valVal := &C.MDB_val{
-		mv_size: valSize,
-	}
-
-	err := asError(C.mdb_cursor_put(self.cursor, (*C.MDB_val)(keyVal), valVal, C.uint(flags|Reserve)))
-	if err == nil && valSize > 0 {
-		C.memcpy(valVal.mv_data, unsafe.Pointer(&val[0]), valSize)
-	}
-
-	keyVal.free()
-	return err
-}
-
-// PutDupSort a key-value pair into the database.
-//
-// The same as ReadWriteCursor.Put, but safe for DupSort databases.
-//
-// If no error occurs, the cursor is positioned at the new key-value
-// pair.
-//
-// See http://www.lmdb.tech/doc/group__mdb.html#ga1f83ccb40011837ff37cc32be01ad91e
-func (self *ReadWriteCursor) PutDupSort(key, val []byte, flags PutFlag) error {
-	keyVal := asValue(key)
-	valVal := asValue(val)
-
-	err := asError(C.mdb_cursor_put(self.cursor, (*C.MDB_val)(keyVal), (*C.MDB_val)(valVal), C.uint(flags&^Reserve)))
-
-	keyVal.free()
-	valVal.free()
-	return err
+	return asError(C.golmdb_mdb_cursor_put(
+		self.cursor,
+		(*C.char)(unsafe.Pointer(&key[0])), C.size_t(len(key)),
+		(*C.char)(unsafe.Pointer(&val[0])), C.size_t(len(val)),
+		C.uint(flags)))
 }
 
 // Delete the key-value pair at the cursor.
