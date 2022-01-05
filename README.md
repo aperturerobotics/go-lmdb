@@ -7,16 +7,18 @@ This is a high-level binding to [LMDB](https://www.symas.com/lmdb).
 This binding uses [cgo](https://pkg.go.dev/cmd/cgo) and so to build,
 you'll need a working cgo environment: a supported C compiler suite,
 alongside the LMDB library and headers. LMDB is extremely widely used
-and is available on all platforms, so it shouldn't be difficult to get
-it to work on your platform. This binding has been predominately
-developed with version 0.9.29, which is the current version at the
-time of writing.
+and is available on "all" platforms, so it shouldn't be difficult to
+get it on your platform. This binding has been predominately developed
+with version 0.9.29, which is the current version at the time of
+writing.
 
 There are several Go bindings to LMDB available. All of them (that I
-can find) are low level and mirror the C API into Go. This provides a
-lot of flexibility, but it leaves a lot of work to do too.
+can find) are fairly low-level and tend to mirror the C API into
+Go. This provides a lot of flexibility, but it leaves a lot of work to
+do too.
 
-This binding provides:
+This binding is high-level. It does not attempt to support all the
+features of LMDB, nor expose the full low-level LMDB API. It provides:
 
 * batching of updates: read-write transactions will be batched
   together automatically. This allows you to control (to some extent)
@@ -31,14 +33,14 @@ This binding provides:
   data that has been written. For such file-systems, it's very
   reasonable to start with a very large file. But not all file-systems
   support _sparse files_. So for better portability, it's preferable
-  to support using smaller file sizes, and dynamically increasing the
+  to support using smaller file sizes, and dynamically increase the
   size as necessary. This binding handles that automatically.
 * minimal copy of data from Go to C and back again. See the docs on
   ReadWriteTxn.Put and ReadOnlyTxn.Get. In many cases, the value of a
   key-value pair can be written directly to disk without further
   copies being taken. Reads can access the data with just a single
   copy provided care is taken to not use the read data beyond the
-  limits of the transaction.
+  lifetime of the transaction.
 
 Many of the more advanced flags from LMDB are still available, for
 example flags to turn off syncing. These flags can make updates/writes
@@ -48,14 +50,3 @@ blow your foot off and destroy your data if you're not careful. This
 binding will not save you from yourself! Refer back to the original
 [LMDB docs](http://www.lmdb.tech/doc/group__mdb.html) if you're in any
 doubt.
-
-## License
-
-LMDB is licensed under the [The OpenLDAP Public License version
-2.8](https://www.openldap.org/software/release/license.html). Unfortunately,
-[pkg.go.dev](https://pkg.go.dev/)'s [License
-policy](https://pkg.go.dev/license-policy) does not recognise this
-license and so the docs for this package will not appear there.
-
-For ease of licensing, this Go binding to LMDB is also licensed under
-the same OpenLDAP Public License version 2.8.

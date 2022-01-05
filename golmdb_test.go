@@ -39,11 +39,6 @@ func TestVersion(t *testing.T) {
 	is.True(golmdb.Version != "")
 }
 
-func TestLicense(t *testing.T) {
-	is := is.New(t)
-	is.True(golmdb.License != "")
-}
-
 func TestError(t *testing.T) {
 	is := is.New(t)
 	is.True(golmdb.LMDBError(golmdb.KeyExist).Error() != "")
