@@ -20,27 +20,17 @@ type readWriteTxnMsg struct {
 	err    error                     // output
 }
 
-type lmdbClientFactory struct {
-	environment *environment
-	*actors.BackPressureClientBaseFactory
-	readWriteTxnMsgPool *sync.Pool
-	resizingLock        *sync.RWMutex
-}
-
-func readOnlyLMDBClientFactory(environment *environment) *lmdbClientFactory {
-	return &lmdbClientFactory{
+func readOnlyLMDBClient(environment *environment) *LMDBClient {
+	environment.readOnly = true
+	return &LMDBClient{
 		environment: environment,
 	}
 }
 
-func spawnLMDBActor(manager actors.ManagerClient, log *zerolog.Logger, environment *environment, batchSize uint) (*lmdbClientFactory, error) {
+func spawnLMDBActor(manager actors.ManagerClient, log *zerolog.Logger, environment *environment, batchSize uint) (*LMDBClient, error) {
 	server := &server{
-		batchSize: int(batchSize),
-		readWriteTxn: &ReadWriteTxn{
-			ReadOnlyTxn: ReadOnlyTxn{
-				environment: environment,
-			},
-		},
+		batchSize:   int(batchSize),
+		environment: environment,
 	}
 
 	var err error
@@ -54,40 +44,27 @@ func spawnLMDBActor(manager actors.ManagerClient, log *zerolog.Logger, environme
 		return nil, err
 	}
 
-	return &lmdbClientFactory{
-		environment:                   environment,
-		BackPressureClientBaseFactory: actors.NewBackPressureClientBaseFactory(clientBase),
+	return &LMDBClient{
+		ClientBase:   clientBase,
+		environment:  environment,
+		resizingLock: &server.resizingLock,
 		readWriteTxnMsgPool: &sync.Pool{
 			New: func() interface{} {
 				return &readWriteTxnMsg{}
 			},
 		},
-		resizingLock: &server.resizingLock,
 	}, nil
-}
-
-func (self *lmdbClientFactory) newLMDBClient() *LMDBClient {
-	if self.environment.readOnly {
-		return &LMDBClient{
-			readOnlyTxn: ReadOnlyTxn{environment: self.environment},
-		}
-
-	} else {
-		return &LMDBClient{
-			BackPressureClientBase: self.BackPressureClientBaseFactory.NewClient(),
-			readOnlyTxn:            ReadOnlyTxn{environment: self.environment},
-			readWriteTxnMsgPool:    self.readWriteTxnMsgPool,
-			resizingLock:           self.resizingLock,
-		}
-	}
 }
 
 // --- Client side API ---
 
-// Each client must only be used by a single go-routine.
+// A client to the whole LMDB database. The client allows you to run
+// Views (read-only transactions), Updates (read-write transactions),
+// and close/terminate the database. A single client is safe for any
+// number of go-routines to use concurrently.
 type LMDBClient struct {
-	*actors.BackPressureClientBase
-	readOnlyTxn         ReadOnlyTxn
+	*actors.ClientBase
+	environment         *environment
 	resizingLock        *sync.RWMutex
 	readWriteTxnMsgPool *sync.Pool
 }
@@ -95,66 +72,89 @@ type LMDBClient struct {
 var _ actors.Client = (*LMDBClient)(nil)
 
 // Run a View: a read-only transaction. The transaction will be run in
-// the current go-routine, and it will only be run once. You must not
-// call this after, or in a race with, a call to
-// TerminateSync. Multiple concurrent Views can proceed concurrently.
+// the current go-routine, and it will only be run once. Multiple
+// concurrent calls to View can proceed concurrently.
 //
-// Do not attempt nested transactions: they are not supported.
+// As this is a read-only transaction, the transaction is aborted no
+// matter what the fun returns. The error that the fun returns is
+// returned from this method.
+//
+// Nested transactions are not supported.
 func (self *LMDBClient) View(fun func(rotxn *ReadOnlyTxn) error) (err error) {
-	if !self.readOnlyTxn.environment.readOnly {
+	if !self.environment.readOnly {
 		self.resizingLock.RLock()
 		defer self.resizingLock.RUnlock()
 	}
 
-	if self.readOnlyTxn.txn == nil {
-		txn, err := self.readOnlyTxn.environment.txnBegin(true)
-		if err != nil {
-			return err
-		}
-		self.readOnlyTxn.txn = txn
-	} else {
-		if err := asError(C.mdb_txn_renew(self.readOnlyTxn.txn)); err != nil {
-			return err
-		}
+	txn, err := self.environment.txnBegin(true)
+	if err != nil {
+		return err
 	}
-
+	readOnlyTxn := ReadOnlyTxn{txn: txn}
 	// use a defer as it'll run even on a panic
-	defer C.mdb_txn_reset(self.readOnlyTxn.txn)
-	return fun(&self.readOnlyTxn)
+	defer C.mdb_txn_abort(txn)
+	return fun(&readOnlyTxn)
 }
 
 // Run an Update: a read-write transaction. The transaction will not
-// be run in the current go-routine, and it may be run more than
-// once. Only a single Update transaction can occur at a time, which
-// golmdb will take care of for you. An Update transaction can proceed
-// concurrently with View transactions.
+// be run in the current go-routine, and it may be run more than once,
+// even if the fun itself returns a nil error. Only a single Update
+// transaction can occur at a time, and golmdb will take care of this
+// for you. An Update transaction can proceed concurrently with one or
+// more View transactions.
 //
-// Do not attempt nested transactions: they are not supported.
+// If the fun returns nil, then the transaction will be committed. If
+// the fun returns any non-nil err then the transaction will be
+// aborted. Any non-nil error returned by the fun is returned from
+// this method.
+//
+// Nested transactions are not supported.
 func (self *LMDBClient) Update(fun func(rwtxn *ReadWriteTxn) error) error {
-	if self.readOnlyTxn.environment.readOnly {
+	if self.environment.readOnly {
 		return errors.New("Cannot update: LMDB has been opened in ReadOnly mode")
 	}
 
 	msg := self.readWriteTxnMsgPool.Get().(*readWriteTxnMsg)
-	defer self.readWriteTxnMsgPool.Put(msg)
 	msg.txnFun = fun
 
 	if self.SendSync(msg, true) {
-		return msg.err
+		err := msg.err
+		self.readWriteTxnMsgPool.Put(msg)
+		return err
 	} else {
+		self.readWriteTxnMsgPool.Put(msg)
 		return errors.New("golmdb server is terminated")
 	}
+}
+
+// Terminates the actor for Update transactions (if it's running), and
+// then shuts down the LMDB database.
+//
+// You must make sure that all concurrently running transactions have
+// finished before you call this method: this method will not wait for
+// concurrent View transactions to finish (or prevent new ones from
+// starting), and it will not wait for calls to Update to complete.
+// It is your responsibility to make sure all users of the client are
+// finished and shutdown before calling TerminateSync.
+//
+// Note that this does not call mdb_env_sync. So if you've opened the
+// database with NoSync or NoMetaSync or MapAsync then you're probably
+// going to lose some data.
+func (self *LMDBClient) TerminateSync() {
+	self.ClientBase.TerminateSync()
+	self.environment.close()
 }
 
 // --- Server side ---
 
 type server struct {
-	actors.BackPressureServerBase
+	actors.ServerBase
 
 	batchSize    int
 	batch        []*readWriteTxnMsg
 	resizingLock sync.RWMutex
-	readWriteTxn *ReadWriteTxn
+	environment  *environment
+	readWriteTxn ReadWriteTxn
 }
 
 var _ actors.Server = (*server)(nil)
@@ -162,7 +162,7 @@ var _ actors.Server = (*server)(nil)
 func (self *server) Init(log zerolog.Logger, mailboxReader *mailbox.MailboxReader, selfClient *actors.ClientBase) (err error) {
 	// this is required for the writer - even though we use NoTLS
 	runtime.LockOSThread()
-	return self.BackPressureServerBase.Init(log, mailboxReader, selfClient)
+	return self.ServerBase.Init(log, mailboxReader, selfClient)
 }
 
 func (self *server) HandleMsg(msg mailbox.Msg) error {
@@ -180,7 +180,7 @@ func (self *server) HandleMsg(msg mailbox.Msg) error {
 		return nil
 
 	default:
-		return self.BackPressureServerBase.HandleMsg(msg)
+		return self.ServerBase.HandleMsg(msg)
 	}
 }
 
@@ -189,11 +189,11 @@ func (self *server) runBatch(batch []*readWriteTxnMsg) error {
 		return nil
 	}
 
-	readWriteTxn := self.readWriteTxn
+	readWriteTxn := &self.readWriteTxn
 
 OUTER:
 	for {
-		txn, err := readWriteTxn.environment.txnBegin(false)
+		txn, err := self.environment.txnBegin(false)
 
 		if err == nil {
 			readWriteTxn.txn = txn
@@ -206,8 +206,8 @@ OUTER:
 				err = msg.txnFun(readWriteTxn)
 
 				if err != nil {
-					C.mdb_txn_abort(readWriteTxn.txn)
 					readWriteTxn.txn = nil
+					C.mdb_txn_abort(txn)
 
 					if err == MapFull {
 						break
@@ -226,8 +226,8 @@ OUTER:
 		}
 
 		if err == nil {
-			err = asError(C.mdb_txn_commit(readWriteTxn.txn))
 			readWriteTxn.txn = nil
+			err = asError(C.mdb_txn_commit(txn))
 		}
 
 		if err == MapFull {
@@ -250,23 +250,31 @@ OUTER:
 	}
 }
 
+func (self *server) Terminated(err error, caughtPanic interface{}) {
+	if self.readWriteTxn.txn != nil { // this can happen if a txn fun panics
+		C.mdb_txn_abort(self.readWriteTxn.txn)
+		self.readWriteTxn.txn = nil
+	}
+	self.ServerBase.Terminated(err, caughtPanic)
+}
+
 func (self *server) increaseSize() error {
 	self.resizingLock.Lock()
 	defer self.resizingLock.Unlock()
 
-	currentMapSize := self.readWriteTxn.environment.mapSize
+	currentMapSize := self.environment.mapSize
 	mapSize := uint64(float64(currentMapSize) * 1.5)
-	if remainder := mapSize % self.readWriteTxn.environment.pageSize; remainder != 0 {
-		mapSize = (mapSize + self.readWriteTxn.environment.pageSize) - remainder
+	if remainder := mapSize % self.environment.pageSize; remainder != 0 {
+		mapSize = (mapSize + self.environment.pageSize) - remainder
 	}
 
-	if err := self.readWriteTxn.environment.setMapSize(mapSize); err != nil {
+	if err := self.environment.setMapSize(mapSize); err != nil {
 		self.Log.Error().Uint64("current size", currentMapSize).Uint64("new size", mapSize).Err(err).Msg("increasing map size")
 		return err
 	}
 	if self.Log.Debug().Enabled() {
 		self.Log.Debug().Uint64("current size", currentMapSize).Uint64("new size", mapSize).Msg("increasing map size")
 	}
-	self.readWriteTxn.environment.mapSize = mapSize
+	self.environment.mapSize = mapSize
 	return nil
 }

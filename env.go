@@ -98,82 +98,65 @@ func (self *environment) txnBegin(readOnlyTxn bool) (txn *C.MDB_txn, err error) 
 	return
 }
 
-type LMDB struct {
-	environment *environment
-
-	clientFactory *lmdbClientFactory
-}
-
-// NewLMDB opens an LMDB database at the given path, creating it if necessary.
+// NewLMDB opens an LMDB database at the given path, creating it if
+// necessary, and returns a client to that LMDB database.
 //
-// NoTLS is always added to the flags. A sensible default flag is WriteMap.
+// NoTLS is always added to the flags automatically. A sensible
+// default flag to use is WriteMap.
 //
 // If the flags include ReadOnly then the database is opened in
-// read-only mode, and all calls to Update will fail.
+// read-only mode, and all calls to Update will immediately return an
+// error. When opening with ReadOnly, the database must already exist.
 //
-// If the flags do not include ReadOnly then an actor will be spawned
-// to run and batch Update transactions. The actor will use the
-// batchSize parameter to control the maximum number of Update
-// transactions that get batched together. This is a maximum: if the
-// actor has received some number of Update transactions and there are
-// no further messages in its mailbox, then it'll run and commit them
-// immediately. A reasonable starting value is the number of
-// go-routines that could concurrently submit Update transactions.
-func NewLMDB(log zerolog.Logger, path string, mode fs.FileMode, numReaders, numDBs uint, flags EnvironmentFlag, batchSize uint) (*LMDB, error) {
-	environment, err := setupEnvironment(path, mode, numReaders, numDBs, flags)
-	if err != nil {
-		return nil, err
-	}
-
-	if flags&ReadOnly != 0 {
-		return readOnlyLMDB(environment), nil
-
-	} else {
-		clientFactory, err := spawnLMDBActor(nil, &log, environment, batchSize)
-		if err != nil {
-			return nil, err
-		}
-		return &LMDB{
-			environment:   environment,
-			clientFactory: clientFactory,
-		}, nil
-	}
-}
-
-// NewManagedLMDB opens an LMDB database at the given path, creating it if necessary.
-//
-// NoTLS is always added to the flags. A sensible default flag is WriteMap.
-//
-// If the flags include ReadOnly then the database is opened in
-// read-only mode, and all calls to Update will fail.
-//
-// If the flags do not include ReadOnly then an actor will be spawned
-// as a child of the manager to run and batch Update transactions. The
-// actor will use the batchSize parameter to control the maximum
-// number of Update transactions that get batched together. This is a
-// maximum: if the actor has received some number of Update
-// transactions and there are no further messages in its mailbox, then
-// it'll run and commit them immediately. A reasonable starting value
-// is the number of go-routines that could concurrently submit Update
+// If the flags do not include ReadOnly then the database will be
+// created if necessary. An actor will be spawned to run and batch
+// Update transactions. The actor will use the batchSize parameter to
+// control the maximum number of Update transactions that get batched
+// together. This is a maximum: if the actor has received some smaller
+// number of Update transactions and there are no further Update
+// transactions queued up, then it'll run and commit what it's
+// received immediately. A reasonable starting value for batchSize is
+// the number of go-routines that could concurrently submit Update
 // transactions.
-func NewManagedLMDB(manager actors.ManagerClient, path string, mode fs.FileMode, numReaders, numDBs uint, flags EnvironmentFlag, batchSize uint) (*LMDB, error) {
+func NewLMDB(log zerolog.Logger, path string, mode fs.FileMode, numReaders, numDBs uint, flags EnvironmentFlag, batchSize uint) (*LMDBClient, error) {
 	environment, err := setupEnvironment(path, mode, numReaders, numDBs, flags)
 	if err != nil {
 		return nil, err
 	}
 
 	if flags&ReadOnly != 0 {
-		return readOnlyLMDB(environment), nil
+		return readOnlyLMDBClient(environment), nil
 
 	} else {
-		clientFactory, err := spawnLMDBActor(manager, nil, environment, batchSize)
+		client, err := spawnLMDBActor(nil, &log, environment, batchSize)
 		if err != nil {
 			return nil, err
 		}
-		return &LMDB{
-			environment:   environment,
-			clientFactory: clientFactory,
-		}, nil
+		return client, nil
+	}
+}
+
+// NewManagedLMDB opens an LMDB database at the given path, creating
+// it if necessary, and returns a client to that LMDB database.
+//
+// This is the same as NewLMDB, with the exception that the spawned
+// actor (if it is spawned) is spawned as a child of the manager,
+// rather than an unmanaged stand-alone actor.
+func NewManagedLMDB(manager actors.ManagerClient, path string, mode fs.FileMode, numReaders, numDBs uint, flags EnvironmentFlag, batchSize uint) (*LMDBClient, error) {
+	environment, err := setupEnvironment(path, mode, numReaders, numDBs, flags)
+	if err != nil {
+		return nil, err
+	}
+
+	if flags&ReadOnly != 0 {
+		return readOnlyLMDBClient(environment), nil
+
+	} else {
+		client, err := spawnLMDBActor(manager, nil, environment, batchSize)
+		if err != nil {
+			return nil, err
+		}
+		return client, nil
 	}
 }
 
@@ -209,44 +192,4 @@ func setupEnvironment(path string, mode fs.FileMode, numReaders, numDBs uint, fl
 	environment.mapSize = mapSize
 
 	return environment, nil
-}
-
-func readOnlyLMDB(environment *environment) *LMDB {
-	environment.readOnly = true
-	return &LMDB{
-		environment:   environment,
-		clientFactory: readOnlyLMDBClientFactory(environment),
-	}
-}
-
-// Terminates the actor for Update transactions (if it's
-// running). Waits for all concurrently running View transactions to
-// finish, and then shuts down the LMDB environment.
-//
-// There is no guarantee that Update transactions that were submitted
-// before TerminateSync was called will be run and committed. If you
-// want to ensure that all such pending transactions are committed,
-// you must perform this coordination yourself: waiting for all
-// concurrent calls to Update to complete (and block new ones from
-// starting) before you call TerminateSync.
-//
-// Note that this does not call mdb_env_sync. So if you've opened the
-// database with NoSync or NoMetaSync or MapAsync then you're probably
-// going to lose some data.
-func (self *LMDB) TerminateSync() {
-	self.clientFactory.newLMDBClient().TerminateSync()
-	if !self.environment.readOnly {
-		self.clientFactory.resizingLock.Lock()
-		defer self.clientFactory.resizingLock.Unlock()
-	}
-	self.environment.close()
-}
-
-// NewLMDBClient returns a new client which allows you to submit updates
-// or view the LMDB. If the LMDB was created with the ReadOnly flag
-// then Updates will not be possible, and only View will work.
-//
-// Each client should only be used by a single go-routine.
-func (self *LMDB) NewLMDBClient() *LMDBClient {
-	return self.clientFactory.newLMDBClient()
 }

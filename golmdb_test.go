@@ -73,10 +73,8 @@ func TestProvokeResize(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	cores := 2 * runtime.GOMAXPROCS(0)
-	lmdb, err := golmdb.NewLMDB(log, dir, 0666, 16, 4, golmdb.WriteMap, uint(cores))
+	client, err := golmdb.NewLMDB(log, dir, 0666, 16, 4, golmdb.WriteMap, uint(cores))
 	is.NoErr(err)
-
-	client := lmdb.NewLMDBClient()
 
 	var db golmdb.DBRef
 	err = client.Update(func(txn *golmdb.ReadWriteTxn) (err error) {
@@ -97,7 +95,6 @@ func TestProvokeResize(t *testing.T) {
 
 			val := make([]byte, 1024)
 			key := make([]byte, 8)
-			client := lmdb.NewLMDBClient()
 
 			var sumLatency, done time.Duration
 
@@ -121,5 +118,5 @@ func TestProvokeResize(t *testing.T) {
 
 	wg.Wait()
 
-	lmdb.TerminateSync()
+	client.TerminateSync()
 }

@@ -9,11 +9,15 @@ import (
 	"syscall"
 )
 
+// The version of LMDB that has been linked against.
 const Version = C.MDB_VERSION_STRING
 
+// Used in calls to NewLMDB() and NewManagedLMDB()
 type EnvironmentFlag C.uint
 
-// Environment flags, used when opening a database. See
+// Environment flags
+//
+// See
 // http://www.lmdb.tech/doc/group__mdb__env.html and
 // http://www.lmdb.tech/doc/group__mdb.html#ga32a193c6bf4d7d5c5d579e71f22e9340
 const (
@@ -30,10 +34,12 @@ const (
 	NoMemLimit  = EnvironmentFlag(C.MDB_NOMEMINIT)
 )
 
+// Used in calls to DBRef()
 type DatabaseFlag C.uint
 
-// Database flags. http://www.lmdb.tech/doc/group__mdb__dbi__open.html
-// Used in calls to DBRef
+// Database flags
+//
+// See http://www.lmdb.tech/doc/group__mdb__dbi__open.html
 const (
 	ReverseKey = DatabaseFlag(C.MDB_REVERSEKEY)
 	DupSort    = DatabaseFlag(C.MDB_DUPSORT)
@@ -44,10 +50,12 @@ const (
 	Create     = DatabaseFlag(C.MDB_CREATE)
 )
 
+// Used in calls to Put() and PutDupSort()
 type PutFlag C.uint
 
-// Write flags. http://www.lmdb.tech/doc/group__mdb__put.html
-// Used in calls to Put
+// Put flags
+//
+// See http://www.lmdb.tech/doc/group__mdb__put.html
 const (
 	NoOverwrite = PutFlag(C.MDB_NOOVERWRITE)
 	NoDupData   = PutFlag(C.MDB_NODUPDATA)
@@ -58,17 +66,20 @@ const (
 	Multiple    = PutFlag(C.MDB_MULTIPLE)
 )
 
-// copy flags. http://www.lmdb.tech/doc/group__mdb__copy.html
+// Copy flags. http://www.lmdb.tech/doc/group__mdb__copy.html
 const copyCompact = C.MDB_CP_COMPACT
 
 // An LMDB error. See the Return Codes in the Constants section.
 type LMDBError C.int
 
-// Return codes. http://www.lmdb.tech/doc/group__errors.html
+// Return codes
 //
 // KeyExist and NotFound are return codes you may well encounter and
 // expect to deal with in application code. The rest of them probably
 // indicate something has gone terribly wrong.
+//
+// See
+// http://www.lmdb.tech/doc/group__errors.html
 const (
 	success         = C.MDB_SUCCESS
 	KeyExist        = LMDBError(C.MDB_KEYEXIST)
