@@ -68,7 +68,7 @@ func (self *ReadOnlyCursor) Close() {
 	self.cursor = nil
 }
 
-func (self *ReadOnlyCursor) moveAndGet0(op CursorOp) (key, val []byte, err error) {
+func (self *ReadOnlyCursor) moveAndGet0(op cursorOp) (key, val []byte, err error) {
 	var keyVal, valVal value
 	err = asError(C.mdb_cursor_get(self.cursor, (*C.MDB_val)(&keyVal), (*C.MDB_val)(&valVal), C.MDB_cursor_op(op)))
 	if err != nil {
@@ -78,7 +78,7 @@ func (self *ReadOnlyCursor) moveAndGet0(op CursorOp) (key, val []byte, err error
 	return keyVal.bytesNoCopy(), valVal.bytesNoCopy(), nil
 }
 
-func (self *ReadOnlyCursor) moveAndGet1(op CursorOp, keyIn []byte) (key, val []byte, err error) {
+func (self *ReadOnlyCursor) moveAndGet1(op cursorOp, keyIn []byte) (key, val []byte, err error) {
 	var keyVal, valVal value
 	err = asError(C.golmdb_mdb_cursor_get1(self.cursor,
 		(*C.char)(unsafe.Pointer(&keyIn[0])), C.size_t(len(keyIn)),
@@ -90,7 +90,7 @@ func (self *ReadOnlyCursor) moveAndGet1(op CursorOp, keyIn []byte) (key, val []b
 	return keyVal.bytesNoCopy(), valVal.bytesNoCopy(), nil
 }
 
-func (self *ReadOnlyCursor) moveAndGet2(op CursorOp, keyIn, valIn []byte) (val []byte, err error) {
+func (self *ReadOnlyCursor) moveAndGet2(op cursorOp, keyIn, valIn []byte) (val []byte, err error) {
 	var valVal value
 	err = asError(C.golmdb_mdb_cursor_get2(self.cursor,
 		(*C.char)(unsafe.Pointer(&keyIn[0])), C.size_t(len(keyIn)),

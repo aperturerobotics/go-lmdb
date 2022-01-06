@@ -67,37 +67,37 @@ const (
 )
 
 // Used in calls to Cursor.GetAndMove
-type CursorOp C.uint
+type cursorOp C.uint
 
 // Cursor ops
 //
 // See http://www.lmdb.tech/doc/group__mdb.html#ga1206b2af8b95e7f6b0ef6b28708c9127
 const (
-	first    = CursorOp(C.MDB_FIRST)
-	firstDup = CursorOp(C.MDB_FIRST_DUP)
+	first    = cursorOp(C.MDB_FIRST)
+	firstDup = cursorOp(C.MDB_FIRST_DUP)
 
-	last    = CursorOp(C.MDB_LAST)
-	lastDup = CursorOp(C.MDB_LAST_DUP)
+	last    = cursorOp(C.MDB_LAST)
+	lastDup = cursorOp(C.MDB_LAST_DUP)
 
-	getCurrent = CursorOp(C.MDB_GET_CURRENT)
+	getCurrent = cursorOp(C.MDB_GET_CURRENT)
 
-	getBoth      = CursorOp(C.MDB_GET_BOTH)
-	getBothRange = CursorOp(C.MDB_GET_BOTH_RANGE)
+	getBoth      = cursorOp(C.MDB_GET_BOTH)
+	getBothRange = cursorOp(C.MDB_GET_BOTH_RANGE)
 
-	set      = CursorOp(C.MDB_SET) // Move to the given key. Don't return anything.
-	setKey   = CursorOp(C.MDB_SET_KEY)
-	setRange = CursorOp(C.MDB_SET_RANGE)
+	set      = cursorOp(C.MDB_SET) // Move to the given key. Don't return anything.
+	setKey   = cursorOp(C.MDB_SET_KEY)
+	setRange = cursorOp(C.MDB_SET_RANGE)
 
-	next      = CursorOp(C.MDB_NEXT)
-	nextDup   = CursorOp(C.MDB_NEXT_DUP)
-	nextNoDup = CursorOp(C.MDB_NEXT_NODUP)
+	next      = cursorOp(C.MDB_NEXT)
+	nextDup   = cursorOp(C.MDB_NEXT_DUP)
+	nextNoDup = cursorOp(C.MDB_NEXT_NODUP)
 
-	prev      = CursorOp(C.MDB_PREV)
-	prevDup   = CursorOp(C.MDB_PREV_DUP)
-	prevNoDup = CursorOp(C.MDB_PREV_NODUP)
+	prev      = cursorOp(C.MDB_PREV)
+	prevDup   = cursorOp(C.MDB_PREV_DUP)
+	prevNoDup = cursorOp(C.MDB_PREV_NODUP)
 
-	getMultiple  = CursorOp(C.MDB_GET_MULTIPLE)
-	nextMultiple = CursorOp(C.MDB_NEXT_MULTIPLE)
+	getMultiple  = cursorOp(C.MDB_GET_MULTIPLE)
+	nextMultiple = cursorOp(C.MDB_NEXT_MULTIPLE)
 )
 
 // Copy flags. http://www.lmdb.tech/doc/group__mdb__copy.html
