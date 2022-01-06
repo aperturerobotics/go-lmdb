@@ -63,6 +63,9 @@ func (self *ReadWriteTxn) NewCursor(db DBRef) (*ReadWriteCursor, error) {
 }
 
 // Close the current cursor.
+//
+// You should call Close() on each cursor before the end of the
+// transaction in which it was created.
 func (self *ReadOnlyCursor) Close() {
 	C.mdb_cursor_close(self.cursor)
 	self.cursor = nil
