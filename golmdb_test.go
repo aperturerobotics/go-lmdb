@@ -471,7 +471,7 @@ func TestCursor(t *testing.T) {
 		defer cursor.Close()
 
 		binary.BigEndian.PutUint64(key, 37)
-		val, err = cursor.SeekExact(key)
+		val, err = cursor.SeekExactKey(key)
 		if err != nil {
 			return err
 		} else if len(val) != 8 {
@@ -480,7 +480,7 @@ func TestCursor(t *testing.T) {
 			return errors.New("wrong value for val")
 		}
 
-		keyOut, val, err := cursor.SeekGreaterThanOrEqual(key)
+		keyOut, val, err := cursor.SeekGreaterThanOrEqualKey(key)
 		if err != nil {
 			return err
 		} else if len(val) != 8 {
@@ -496,7 +496,7 @@ func TestCursor(t *testing.T) {
 		}
 
 		binary.BigEndian.PutUint64(key, 137)
-		val, err = cursor.SeekExact(key)
+		val, err = cursor.SeekExactKey(key)
 		if val != nil {
 			return errors.New("Expected nil val")
 		} else if err != golmdb.NotFound {
@@ -506,7 +506,7 @@ func TestCursor(t *testing.T) {
 		}
 
 		// should still get NotFound from SeekGreaterThanOrEqual
-		keyOut, val, err = cursor.SeekGreaterThanOrEqual(key)
+		keyOut, val, err = cursor.SeekGreaterThanOrEqualKey(key)
 		if val != nil {
 			return errors.New("Expected nil val")
 		} else if keyOut != nil {
@@ -518,14 +518,14 @@ func TestCursor(t *testing.T) {
 		}
 
 		binary.BigEndian.PutUint64(key, 18)
-		_, err = cursor.SeekExact(key)
+		_, err = cursor.SeekExactKey(key)
 		if err != nil {
 			return err
 		} else if err = cursor.Delete(0); err != nil {
 			return err
 		}
 
-		keyOut, val, err = cursor.SeekGreaterThanOrEqual(key)
+		keyOut, val, err = cursor.SeekGreaterThanOrEqualKey(key)
 		if err != nil {
 			return err
 		} else if len(val) != 8 {
@@ -700,7 +700,7 @@ func TestDupDB(t *testing.T) {
 		}
 
 		binary.BigEndian.PutUint64(key, 32)
-		val, err = cursor.SeekExact(key)
+		val, err = cursor.SeekExactKey(key)
 		if err != nil {
 			return err
 		} else if len(val) != 8 {
@@ -713,7 +713,7 @@ func TestDupDB(t *testing.T) {
 			return err
 		}
 
-		val, err = cursor.SeekExact(key)
+		val, err = cursor.SeekExactKey(key)
 		if err != nil {
 			return err
 		} else if len(val) != 8 {
@@ -726,14 +726,14 @@ func TestDupDB(t *testing.T) {
 			return err
 		}
 
-		_, err = cursor.SeekExact(key)
+		_, err = cursor.SeekExactKey(key)
 		if err != golmdb.NotFound {
 			return fmt.Errorf("Wrong error: expected NotFound, got %v", err)
 		} else {
 			err = nil
 		}
 
-		keyOut, val, err := cursor.SeekGreaterThanOrEqual(key)
+		keyOut, val, err := cursor.SeekGreaterThanOrEqualKey(key)
 		if err != nil {
 			return err
 		} else if len(val) != 8 {

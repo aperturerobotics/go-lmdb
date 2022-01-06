@@ -179,7 +179,7 @@ func (self *ReadOnlyCursor) PrevKey() (key, val []byte, err error) {
 // If the exact key doesn't exist, return NotFound.
 //
 // For DupSort databases, move to the first value of the given key.
-func (self *ReadOnlyCursor) SeekExact(key []byte) (val []byte, err error) {
+func (self *ReadOnlyCursor) SeekExactKey(key []byte) (val []byte, err error) {
 	_, val, err = self.moveAndGet1(setKey, key)
 	return val, err
 }
@@ -188,7 +188,7 @@ func (self *ReadOnlyCursor) SeekExact(key []byte) (val []byte, err error) {
 //
 // If the exact key doesn't exist, move to the nearest key greater
 // than the given key.
-func (self *ReadOnlyCursor) SeekGreaterThanOrEqual(keyIn []byte) (keyOut, val []byte, err error) {
+func (self *ReadOnlyCursor) SeekGreaterThanOrEqualKey(keyIn []byte) (keyOut, val []byte, err error) {
 	return self.moveAndGet1(setRange, keyIn)
 }
 
