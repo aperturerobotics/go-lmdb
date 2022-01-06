@@ -1,13 +1,13 @@
 /* golmdb.h
  *
- * This code was originally written by Bryan Matsuo, at
- * https://github.com/bmatsuo/lmdb-go/blob/master/lmdb/lmdbgo.h and
+ * This code was originally written by, and is copyright, Bryan
+ * Matsuo, at
+ * https://github.com/bmatsuo/lmdb-go/blob/master/lmdb/lmdbgo.c and
  * licensed under BSD 3-clause.
  *
- * I have made some small naming changes to it to make it consistent
- * with this package. And I have removed some functionality that I
- * don't need. But I have added nothing of value to this, and so I
- * consider the copyright of this code to belong to Bryan Matsuo.
+ * I have made some changes to cursor_get so that they obey
+ * the cgo contract and do not copy go pointers into other go
+ * pointers. Those areas, copyright Matthew Sackman.
  */
 #ifndef _GOLMDB_H_
 #define _GOLMDB_H_
@@ -28,7 +28,7 @@ int golmdb_mdb_get(MDB_txn *txn, MDB_dbi dbi, char *kdata, size_t kn, MDB_val *v
 int golmdb_mdb_put(MDB_txn *txn, MDB_dbi dbi, char *kdata, size_t kn, char *vdata, size_t vn, unsigned int flags);
 int golmdb_mdb_del(MDB_txn *txn, MDB_dbi dbi, char *kdata, size_t kn, char *vdata, size_t vn);
 int golmdb_mdb_cursor_get1(MDB_cursor *cur, char *kdata, size_t kn, MDB_val *key, MDB_val *val, MDB_cursor_op op);
-int golmdb_mdb_cursor_get2(MDB_cursor *cur, char *kdata, size_t kn, char *vdata, size_t vn, MDB_val *key, MDB_val *val, MDB_cursor_op op);
+int golmdb_mdb_cursor_get2(MDB_cursor *cur, char *kdata, size_t kn, char *vdata, size_t vn, MDB_val *val, MDB_cursor_op op);
 int golmdb_mdb_cursor_put(MDB_cursor *cur, char *kdata, size_t kn, char *vdata, size_t vn, unsigned int flags);
 
 #endif

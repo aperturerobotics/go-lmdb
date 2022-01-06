@@ -29,13 +29,6 @@ func (self *value) bytesNoCopy() []byte {
 	return unsafe.Slice((*byte)(self.mv_data), self.mv_size)
 }
 
-func (self *value) free() {
-	if self == nil {
-		return
-	}
-	C.free(unsafe.Pointer(self))
-}
-
 type ReadOnlyTxn struct {
 	txn *C.MDB_txn
 }
@@ -111,8 +104,16 @@ func (self *ReadWriteTxn) Put(db DBRef, key, val []byte, flags PutFlag) error {
 // See
 // http://www.lmdb.tech/doc/group__mdb.html#gab8182f9360ea69ac0afd4a4eaab1ddb0
 func (self *ReadWriteTxn) Delete(db DBRef, key, val []byte) error {
-	return asError(C.golmdb_mdb_del(
-		self.txn, C.MDB_dbi(db),
-		(*C.char)(unsafe.Pointer(&key[0])), C.size_t(len(key)),
-		(*C.char)(unsafe.Pointer(&val[0])), C.size_t(len(val))))
+	if val == nil {
+		return asError(C.golmdb_mdb_del(
+			self.txn, C.MDB_dbi(db),
+			(*C.char)(unsafe.Pointer(&key[0])), C.size_t(len(key)),
+			nil, C.size_t(0)))
+
+	} else {
+		return asError(C.golmdb_mdb_del(
+			self.txn, C.MDB_dbi(db),
+			(*C.char)(unsafe.Pointer(&key[0])), C.size_t(len(key)),
+			(*C.char)(unsafe.Pointer(&val[0])), C.size_t(len(val))))
+	}
 }

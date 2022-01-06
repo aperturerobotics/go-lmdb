@@ -122,7 +122,9 @@ func (self *environment) copy(path string, compact bool) error {
 // necessary, and returns a client to that LMDB database.
 //
 // NoTLS is always added to the flags automatically. A sensible
-// default flag to use is WriteMap.
+// default flag to use is WriteMap. Adding NoReadAhead will probably
+// if you expect your dataset to grow large (especially larger than
+// RAM).
 //
 // If the flags include ReadOnly then the database is opened in
 // read-only mode, and all calls to Update will immediately return an

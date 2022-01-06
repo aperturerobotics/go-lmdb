@@ -141,7 +141,9 @@ func (self *LMDBClient) Update(fun func(rwtxn *ReadWriteTxn) error) error {
 // database with NoSync or NoMetaSync or MapAsync then you will need
 // to call Sync() before TerminateSync()
 func (self *LMDBClient) TerminateSync() {
-	self.ClientBase.TerminateSync()
+	if !self.environment.readOnly {
+		self.ClientBase.TerminateSync()
+	}
 	self.environment.close()
 }
 
