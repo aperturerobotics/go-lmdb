@@ -33,9 +33,15 @@ func readOnlyLMDBClient(environment *environment) *LMDBClient {
 }
 
 func spawnLMDBActor(manager actors.ManagerClient, log *zerolog.Logger, environment *environment, batchSize uint) (*LMDBClient, error) {
+	readersThrottle := make(chan struct{}, environment.numReaders)
+	for idx := 0; idx < int(environment.numReaders); idx++ {
+		readersThrottle <- struct{}{}
+	}
+
 	server := &server{
-		batchSize:   int(batchSize),
-		environment: environment,
+		batchSize:       int(batchSize),
+		environment:     environment,
+		readersThrottle: readersThrottle,
 	}
 
 	var err error
@@ -49,16 +55,10 @@ func spawnLMDBActor(manager actors.ManagerClient, log *zerolog.Logger, environme
 		return nil, err
 	}
 
-	readersThrottle := make(chan struct{}, environment.numReaders)
-	for idx := 0; idx < int(environment.numReaders); idx++ {
-		readersThrottle <- struct{}{}
-	}
-
 	return &LMDBClient{
 		ClientBase:      clientBase,
 		environment:     environment,
 		readersThrottle: readersThrottle,
-		resizingLock:    &server.resizingLock,
 		readWriteTxnMsgPool: &sync.Pool{
 			New: func() interface{} {
 				return &readWriteTxnMsg{}
@@ -77,7 +77,6 @@ type LMDBClient struct {
 	*actors.ClientBase
 	environment         *environment
 	readersThrottle     chan struct{}
-	resizingLock        *sync.RWMutex
 	readWriteTxnMsgPool *sync.Pool
 }
 
@@ -93,10 +92,6 @@ var _ actors.Client = (*LMDBClient)(nil)
 //
 // Nested transactions are not supported.
 func (self *LMDBClient) View(fun func(rotxn *ReadOnlyTxn) error) (err error) {
-	if !self.environment.readOnly {
-		self.resizingLock.RLock()
-		defer self.resizingLock.RUnlock()
-	}
 	token := <-self.readersThrottle
 	defer func() { self.readersThrottle <- token }()
 
@@ -200,11 +195,11 @@ func (self *LMDBClient) Copy(path string, compact bool) error {
 type server struct {
 	actors.ServerBase
 
-	batchSize    int
-	batch        []*readWriteTxnMsg
-	resizingLock sync.RWMutex
-	environment  *environment
-	readWriteTxn ReadWriteTxn
+	batchSize       int
+	batch           []*readWriteTxnMsg
+	readersThrottle chan struct{}
+	environment     *environment
+	readWriteTxn    ReadWriteTxn
 }
 
 var _ actors.Server = (*server)(nil)
@@ -309,8 +304,16 @@ func (self *server) Terminated(err error, caughtPanic interface{}) {
 }
 
 func (self *server) increaseSize() error {
-	self.resizingLock.Lock()
-	defer self.resizingLock.Unlock()
+	// grab all the tokens from the read throttle to stop. This
+	// guarantees there are no reads going on.
+	for idx := 0; idx < int(self.environment.numReaders); idx++ {
+		<-self.readersThrottle
+	}
+	defer func() {
+		for idx := 0; idx < int(self.environment.numReaders); idx++ {
+			self.readersThrottle <- struct{}{}
+		}
+	}()
 
 	currentMapSize := self.environment.mapSize
 	mapSize := uint64(float64(currentMapSize) * 1.5)
