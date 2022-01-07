@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"testing"
 	"unsafe"
@@ -51,7 +52,7 @@ func createDatabase(log zerolog.Logger, batchSize uint) (client *golmdb.LMDBClie
 		return nil, "", err
 	}
 
-	client, err = golmdb.NewLMDB(log, dir, 0666, 16, 4, golmdb.WriteMap|golmdb.NoReadAhead, batchSize)
+	client, err = golmdb.NewLMDB(log, dir, 0666, 100, 4, golmdb.WriteMap|golmdb.NoReadAhead, batchSize)
 	if err != nil {
 		return nil, "", err
 	}
@@ -827,4 +828,122 @@ func TestDupDB(t *testing.T) {
 		return
 	})
 	is.NoErr(err)
+}
+
+func TestLexicalSort(t *testing.T) {
+	SetGlobalLogLevelDebug()
+	log := NewTestLogger(t)
+	is := is.New(t)
+
+	client, dir, err := createDatabase(log, 16)
+	is.NoErr(err)
+	defer os.RemoveAll(dir)
+	defer client.TerminateSync()
+
+	dbRef, err := createDBRef(client, t.Name(), golmdb.DupSort)
+	is.NoErr(err)
+
+	foo := []byte("foo")
+	foo0 := append(foo, 0x00)
+	foo1 := append(foo, 0x01)
+
+	bar := []byte("bar")
+	bar0 := append(bar, 0x00)
+	bar1 := append(bar, 0x01)
+
+	err = client.Update(func(rwtxn *golmdb.ReadWriteTxn) (err error) {
+		for _, key := range [][]byte{foo, foo0, foo1, bar, bar0, bar1} {
+			if err = rwtxn.Put(dbRef, key, nil, 0); err != nil {
+				return err
+			}
+		}
+		return err
+	})
+	is.NoErr(err)
+
+	err = client.View(func(rotxn *golmdb.ReadOnlyTxn) (err error) {
+		cursor, err := rotxn.NewCursor(dbRef)
+		if err != nil {
+			return err
+		}
+		defer cursor.Close()
+
+		if key, _, err := cursor.First(); err != nil {
+			return err
+		} else if !bytes.Equal(key, bar) {
+			return errors.New("Wrong first key")
+		}
+
+		if key, _, err := cursor.Next(); err != nil {
+			return err
+		} else if !bytes.Equal(key, bar0) {
+			return errors.New("Wrong first-next key")
+		}
+
+		if key, _, err := cursor.Last(); err != nil {
+			return err
+		} else if !bytes.Equal(key, foo1) {
+			return errors.New("Wrong last key")
+		}
+
+		if key, _, err := cursor.Prev(); err != nil {
+			return err
+		} else if !bytes.Equal(key, foo0) {
+			return errors.New("Wrong last-prev key")
+		}
+
+		return
+	})
+	is.NoErr(err)
+
+	findLastKeyWithPrefix := func(prefix []byte) (lastKey []byte, err error) {
+		// We want to calculate the "next" prefix, and then go one back from there. This should work because of the lexical sorting.
+		nextKeyInt := new(big.Int).SetBytes(prefix)
+		nextKeyInt.Add(nextKeyInt, big.NewInt(1))
+		nextKeyBytes := nextKeyInt.Bytes()
+
+		err = client.View(func(rotxn *golmdb.ReadOnlyTxn) (err error) {
+			cursor, err := rotxn.NewCursor(dbRef)
+			if err != nil {
+				return err
+			}
+			defer cursor.Close()
+
+			// if it got longer then the next number used a new
+			// column. Which means the prefix is all 0xff, so there is no
+			// "next", so just go straight to the last key-value pair in
+			// the database.
+			gotoLast := len(nextKeyBytes) > len(foo)
+
+			if !gotoLast {
+				_, _, err := cursor.SeekGreaterThanOrEqualKey(nextKeyBytes)
+				if err == golmdb.NotFound { // there is nothing after
+					gotoLast = true
+					err = nil
+				} else if err != nil {
+					return err
+				} else if lastKey, _, err = cursor.Prev(); err != nil {
+					return err
+				}
+			}
+			if gotoLast {
+				if lastKey, _, err = cursor.Last(); err != nil {
+					return err
+				}
+			}
+			return
+		})
+		if err != nil {
+			return nil, err
+		}
+		return lastKey, nil
+	}
+
+	key, err := findLastKeyWithPrefix(foo)
+	is.NoErr(err)
+	is.True(bytes.Equal(key, foo1))
+
+	key, err = findLastKeyWithPrefix(bar)
+	is.NoErr(err)
+	is.True(bytes.Equal(key, bar1))
 }

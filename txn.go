@@ -89,11 +89,19 @@ func (self *ReadOnlyTxn) Get(db DBRef, key []byte) ([]byte, error) {
 // See
 // http://www.lmdb.tech/doc/group__mdb.html#ga4fa8573d9236d54687c61827ebf8cac0
 func (self *ReadWriteTxn) Put(db DBRef, key, val []byte, flags PutFlag) error {
-	return asError(C.golmdb_mdb_put(
-		self.txn, C.MDB_dbi(db),
-		(*C.char)(unsafe.Pointer(&key[0])), C.size_t(len(key)),
-		(*C.char)(unsafe.Pointer(&val[0])), C.size_t(len(val)),
-		C.uint(flags)))
+	if len(val) == 0 {
+		return asError(C.golmdb_mdb_put(
+			self.txn, C.MDB_dbi(db),
+			(*C.char)(unsafe.Pointer(&key[0])), C.size_t(len(key)),
+			nil, C.size_t(0),
+			C.uint(flags)))
+	} else {
+		return asError(C.golmdb_mdb_put(
+			self.txn, C.MDB_dbi(db),
+			(*C.char)(unsafe.Pointer(&key[0])), C.size_t(len(key)),
+			(*C.char)(unsafe.Pointer(&val[0])), C.size_t(len(val)),
+			C.uint(flags)))
+	}
 }
 
 // Delete a key-value pair from the database.
@@ -104,7 +112,7 @@ func (self *ReadWriteTxn) Put(db DBRef, key, val []byte, flags PutFlag) error {
 // See
 // http://www.lmdb.tech/doc/group__mdb.html#gab8182f9360ea69ac0afd4a4eaab1ddb0
 func (self *ReadWriteTxn) Delete(db DBRef, key, val []byte) error {
-	if val == nil {
+	if len(val) == 0 {
 		return asError(C.golmdb_mdb_del(
 			self.txn, C.MDB_dbi(db),
 			(*C.char)(unsafe.Pointer(&key[0])), C.size_t(len(key)),

@@ -15,10 +15,11 @@ import (
 )
 
 type environment struct {
-	env      *C.MDB_env
-	readOnly bool
-	mapSize  uint64
-	pageSize uint64
+	env        *C.MDB_env
+	readOnly   bool
+	numReaders uint
+	mapSize    uint64
+	pageSize   uint64
 }
 
 func newEnvironment() (*environment, error) {
@@ -190,6 +191,8 @@ func setupEnvironment(path string, mode fs.FileMode, numReaders, numDBs uint, fl
 	if err := environment.setMaxReaders(numReaders); err != nil {
 		return nil, err
 	}
+	environment.numReaders = numReaders
+
 	if err := environment.setMaxNumberOfDBs(numDBs); err != nil {
 		return nil, err
 	}

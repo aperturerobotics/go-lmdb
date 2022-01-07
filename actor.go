@@ -22,8 +22,13 @@ type readWriteTxnMsg struct {
 
 func readOnlyLMDBClient(environment *environment) *LMDBClient {
 	environment.readOnly = true
+	readersThrottle := make(chan struct{}, environment.numReaders)
+	for idx := 0; idx < int(environment.numReaders); idx++ {
+		readersThrottle <- struct{}{}
+	}
 	return &LMDBClient{
-		environment: environment,
+		environment:     environment,
+		readersThrottle: readersThrottle,
 	}
 }
 
@@ -44,10 +49,16 @@ func spawnLMDBActor(manager actors.ManagerClient, log *zerolog.Logger, environme
 		return nil, err
 	}
 
+	readersThrottle := make(chan struct{}, environment.numReaders)
+	for idx := 0; idx < int(environment.numReaders); idx++ {
+		readersThrottle <- struct{}{}
+	}
+
 	return &LMDBClient{
-		ClientBase:   clientBase,
-		environment:  environment,
-		resizingLock: &server.resizingLock,
+		ClientBase:      clientBase,
+		environment:     environment,
+		readersThrottle: readersThrottle,
+		resizingLock:    &server.resizingLock,
 		readWriteTxnMsgPool: &sync.Pool{
 			New: func() interface{} {
 				return &readWriteTxnMsg{}
@@ -65,6 +76,7 @@ func spawnLMDBActor(manager actors.ManagerClient, log *zerolog.Logger, environme
 type LMDBClient struct {
 	*actors.ClientBase
 	environment         *environment
+	readersThrottle     chan struct{}
 	resizingLock        *sync.RWMutex
 	readWriteTxnMsgPool *sync.Pool
 }
@@ -85,6 +97,8 @@ func (self *LMDBClient) View(fun func(rotxn *ReadOnlyTxn) error) (err error) {
 		self.resizingLock.RLock()
 		defer self.resizingLock.RUnlock()
 	}
+	token := <-self.readersThrottle
+	defer func() { self.readersThrottle <- token }()
 
 	txn, err := self.environment.txnBegin(true)
 	if err != nil {
