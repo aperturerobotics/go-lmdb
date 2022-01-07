@@ -22,26 +22,16 @@ type readWriteTxnMsg struct {
 
 func readOnlyLMDBClient(environment *environment) *LMDBClient {
 	environment.readOnly = true
-	readersThrottle := make(chan struct{}, environment.numReaders)
-	for idx := 0; idx < int(environment.numReaders); idx++ {
-		readersThrottle <- struct{}{}
-	}
 	return &LMDBClient{
-		environment:     environment,
-		readersThrottle: readersThrottle,
+		environment: environment,
 	}
 }
 
 func spawnLMDBActor(manager actors.ManagerClient, log *zerolog.Logger, environment *environment, batchSize uint) (*LMDBClient, error) {
-	readersThrottle := make(chan struct{}, environment.numReaders)
-	for idx := 0; idx < int(environment.numReaders); idx++ {
-		readersThrottle <- struct{}{}
-	}
-
 	server := &server{
-		batchSize:       int(batchSize),
-		environment:     environment,
-		readersThrottle: readersThrottle,
+		batchSize:    int(batchSize),
+		environment:  environment,
+		resizingLock: new(sync.RWMutex),
 	}
 
 	var err error
@@ -56,9 +46,9 @@ func spawnLMDBActor(manager actors.ManagerClient, log *zerolog.Logger, environme
 	}
 
 	return &LMDBClient{
-		ClientBase:      clientBase,
-		environment:     environment,
-		readersThrottle: readersThrottle,
+		ClientBase:   clientBase,
+		environment:  environment,
+		resizingLock: server.resizingLock,
 		readWriteTxnMsgPool: &sync.Pool{
 			New: func() interface{} {
 				return &readWriteTxnMsg{}
@@ -76,7 +66,7 @@ func spawnLMDBActor(manager actors.ManagerClient, log *zerolog.Logger, environme
 type LMDBClient struct {
 	*actors.ClientBase
 	environment         *environment
-	readersThrottle     chan struct{}
+	resizingLock        *sync.RWMutex
 	readWriteTxnMsgPool *sync.Pool
 }
 
@@ -92,8 +82,10 @@ var _ actors.Client = (*LMDBClient)(nil)
 //
 // Nested transactions are not supported.
 func (self *LMDBClient) View(fun func(rotxn *ReadOnlyTxn) error) (err error) {
-	token := <-self.readersThrottle
-	defer func() { self.readersThrottle <- token }()
+	if !self.environment.readOnly {
+		self.resizingLock.RLock()
+		defer self.resizingLock.RUnlock()
+	}
 
 	txn, err := self.environment.txnBegin(true)
 	if err != nil {
@@ -195,11 +187,11 @@ func (self *LMDBClient) Copy(path string, compact bool) error {
 type server struct {
 	actors.ServerBase
 
-	batchSize       int
-	batch           []*readWriteTxnMsg
-	readersThrottle chan struct{}
-	environment     *environment
-	readWriteTxn    ReadWriteTxn
+	batchSize    int
+	batch        []*readWriteTxnMsg
+	resizingLock *sync.RWMutex
+	environment  *environment
+	readWriteTxn ReadWriteTxn
 }
 
 var _ actors.Server = (*server)(nil)
@@ -304,16 +296,8 @@ func (self *server) Terminated(err error, caughtPanic interface{}) {
 }
 
 func (self *server) increaseSize() error {
-	// grab all the tokens from the read throttle to stop. This
-	// guarantees there are no reads going on.
-	for idx := 0; idx < int(self.environment.numReaders); idx++ {
-		<-self.readersThrottle
-	}
-	defer func() {
-		for idx := 0; idx < int(self.environment.numReaders); idx++ {
-			self.readersThrottle <- struct{}{}
-		}
-	}()
+	self.resizingLock.Lock()
+	defer self.resizingLock.Unlock()
 
 	currentMapSize := self.environment.mapSize
 	mapSize := uint64(float64(currentMapSize) * 1.5)
