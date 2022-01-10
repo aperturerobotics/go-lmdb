@@ -29,18 +29,18 @@ features of LMDB, nor expose the full low-level LMDB API. It provides:
 * automatic resizing: LMDB returns an error if its database file fills
   up. LMDB also has an API to increase the size of its database file.
   Many modern file-systems support _sparse files_ which make it
-  possible to create a huge empty file which only use up the amount of
+  possible to create a huge empty file which only uses the amount of
   data that has been written. For such file-systems, it's very
   reasonable to start with a very large file. But not all file-systems
   support _sparse files_. So for better portability, it's preferable
   to support using smaller file sizes, and dynamically increase the
   size as necessary. This binding handles that automatically.
-* minimal copy of data from Go to C and back again. See the docs on
-  ReadWriteTxn.Put and ReadOnlyTxn.Get. In many cases, the value of a
-  key-value pair can be written directly to disk without further
-  copies being taken. Reads can access the data with just a single
-  copy provided care is taken to not use the read data beyond the
-  lifetime of the transaction.
+* minimal copy of data from Go to C and back again. In most cases,
+  Puts of a key-value pair can be written directly to disk without
+  further copies being taken. Reads can access the data on disk with
+  just a single copy (i.e. the copy managed by the OS as part of the
+  mmap) provided care is taken to not use the data beyond the lifetime
+  of the transaction.
 
 Many of the more advanced flags from LMDB are still available, for
 example flags to turn off syncing. These flags can make updates/writes
@@ -50,3 +50,6 @@ blow your foot off and destroy your data if you're not careful. This
 binding will not save you from yourself! Refer back to the original
 [LMDB docs](http://www.lmdb.tech/doc/group__mdb.html) if you're in any
 doubt.
+
+There are a few more words about this over on [my
+blog](https://wellquite.org/posts/golmdb/)
