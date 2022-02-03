@@ -37,5 +37,5 @@ golang.org/x/tools v0.1.7/go.mod h1:LGqMHiF4EqQNHR1JncWGqT5BVaXmza+X+BDGol+dOxo=
 golang.org/x/xerrors v0.0.0-20190717185122-a985d3407aa7/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
 golang.org/x/xerrors v0.0.0-20191011141410-1b5146add898/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
 golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
-wellquite.org/actors v0.0.0-20220203093954-1723917eebc3 h1:dhC4C1uYEtjDEULrW1D0cmmNNBqyj+7odpB3DoViY8w=
-wellquite.org/actors v0.0.0-20220203093954-1723917eebc3/go.mod h1:rMQ8ULds4a50KKXw9njzvz0hKHu/o/jwaiBP9slCOKE=
+wellquite.org/actors v0.0.0-20220203094908-7f1240e9598e h1:E0LJMdeskuNYBkM619FBKGiTi4HqqhWjFP++DL2BHaE=
+wellquite.org/actors v0.0.0-20220203094908-7f1240e9598e/go.mod h1:rMQ8ULds4a50KKXw9njzvz0hKHu/o/jwaiBP9slCOKE=
