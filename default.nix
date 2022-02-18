@@ -1,4 +1,4 @@
-{ pkgs ? import <nixpkgs> {} }:
+{ pkgs ? import <nixos-unstable> {} }:
 
 with pkgs;
 
@@ -13,7 +13,7 @@ buildGoModule {
     (path: type: substring 0 1 (baseNameOf path) != "." && (baseNameOf path) != "default.nix" && type != "symlink")
     ./.;
 
-  vendorSha256 = "sha256:12yihid9r6vww8dcyx7a8k17n3yad9a48n8rxp3mnvvj5924g5zg";
+  vendorSha256 = "sha256:0yl6lkf49fkbjgz8365pp5f76yl8qnfj10frfkys0vx49f1nv2xh";
 
   meta = with lib; {
     description = "High-level Go bindings to LMDB";
