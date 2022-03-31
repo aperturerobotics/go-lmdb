@@ -203,6 +203,15 @@ func (self *ReadOnlyCursor) SeekExactKeyAndValue(keyIn, valIn []byte) (err error
 	return err
 }
 
+// Only for DupSort. Return the number values with the current key.
+func (self *ReadOnlyCursor) Count() (count uint64, err error) {
+	err = asError(C.mdb_cursor_count(self.cursor, (*C.size_t)(&count)))
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
 // Only for DupSort. Move to the key-value pair indicated.
 //
 // If the exact key-value pair doesn't exist, move to the nearest

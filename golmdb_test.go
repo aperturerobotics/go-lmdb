@@ -661,6 +661,11 @@ func TestDupDB(t *testing.T) {
 		if err = expectCursor(cursor.Next, 3, 0, nil); err != nil {
 			return err
 		}
+		if count, err := cursor.Count(); err != nil {
+			return err
+		} else if count != 3 {
+			return fmt.Errorf("Expected 3 values. Got %d", count)
+		}
 		if err = expectCursor(cursor.NextInSameKey, 3, 1, nil); err != nil {
 			return err
 		}
