@@ -13,7 +13,7 @@ buildGoModule {
     (path: type: substring 0 1 (baseNameOf path) != "." && (baseNameOf path) != "default.nix" && type != "symlink")
     ./.;
 
-  vendorSha256 = "sha256-KnMFg7O5sTp2pupGajyUHlyqDcAp+oqfyO4sP93mBMc=";
+  vendorSha256 = "sha256-HqBUsSnX8jCo+LpBX16LCQkIowzp+M1uCdVlfzibKs4=";
 
   meta = with lib; {
     description = "High-level Go bindings to LMDB";
