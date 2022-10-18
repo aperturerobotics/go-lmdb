@@ -108,30 +108,45 @@ func (self *ReadOnlyCursor) moveAndGet2(op cursorOp, keyIn, valIn []byte) (val [
 }
 
 // Move to the first key-value pair of the database.
+//
+// Do not write into the returned key or val byte slices. Doing so
+// will cause a segfault.
 func (self *ReadOnlyCursor) First() (key, val []byte, err error) {
 	return self.moveAndGet0(first)
 }
 
 // Only for DupSort. Move to the first key-value pair without changing
 // the current key.
+//
+// Do not write into the returned val byte slice. Doing so will cause
+// a segfault.
 func (self *ReadOnlyCursor) FirstInSameKey() (val []byte, err error) {
 	_, val, err = self.moveAndGet0(firstDup)
 	return val, err
 }
 
 // Move to the last key-value pair of the database.
+//
+// Do not write into the returned key or val byte slices. Doing so
+// will cause a segfault.
 func (self *ReadOnlyCursor) Last() (key, val []byte, err error) {
 	return self.moveAndGet0(last)
 }
 
 // Only for DupSort. Move to the last key-value pair without changing
 // the current key.
+//
+// Do not write into the returned val byte slice. Doing so will cause
+// a segfault.
 func (self *ReadOnlyCursor) LastInSameKey() (val []byte, err error) {
 	_, val, err = self.moveAndGet0(lastDup)
 	return val, err
 }
 
 // Get the current key-value pair of the cursor.
+//
+// Do not write into the returned key or val byte slices. Doing so
+// will cause a segfault.
 func (self *ReadOnlyCursor) Current() (key, val []byte, err error) {
 	return self.moveAndGet0(getCurrent)
 }
@@ -141,17 +156,26 @@ func (self *ReadOnlyCursor) Current() (key, val []byte, err error) {
 // For DupSort databases, move to the next value of the current
 // key, if there is one, otherwise the first value of the next
 // key.
+//
+// Do not write into the returned key or val byte slices. Doing so
+// will cause a segfault.
 func (self *ReadOnlyCursor) Next() (key, val []byte, err error) {
 	return self.moveAndGet0(next)
 }
 
 // Only for DupSort. Move to the next key-value pair, but only if the
 // key is the same as the current key.
+//
+// Do not write into the returned key or val byte slices. Doing so
+// will cause a segfault.
 func (self *ReadOnlyCursor) NextInSameKey() (key, val []byte, err error) {
 	return self.moveAndGet0(nextDup)
 }
 
 // Only for DupSort. Move to the first key-value pair of the next key.
+//
+// Do not write into the returned key or val byte slices. Doing so
+// will cause a segfault.
 func (self *ReadOnlyCursor) NextKey() (key, val []byte, err error) {
 	return self.moveAndGet0(nextNoDup)
 }
@@ -161,27 +185,39 @@ func (self *ReadOnlyCursor) NextKey() (key, val []byte, err error) {
 // For DupSort databases, move to the previous value of the current
 // key, if there is one, otherwise the last value of the previous
 // key.
+//
+// Do not write into the returned key or val byte slices. Doing so
+// will cause a segfault.
 func (self *ReadOnlyCursor) Prev() (key, val []byte, err error) {
 	return self.moveAndGet0(prev)
 }
 
 // Only for DupSort. Move to the previous key-value pair, but only if
 // the key is the same as the current key.
+//
+// Do not write into the returned key or val byte slices. Doing so
+// will cause a segfault.
 func (self *ReadOnlyCursor) PrevInSameKey() (key, val []byte, err error) {
 	return self.moveAndGet0(prevDup)
 }
 
 // Only for DupSort. Move to the last key-value pair of the previous
 // key.
+//
+// Do not write into the returned key or val byte slices. Doing so
+// will cause a segfault.
 func (self *ReadOnlyCursor) PrevKey() (key, val []byte, err error) {
 	return self.moveAndGet0(prevNoDup)
 }
 
 // Move to the key-value pair indicated by the given key.
 //
-// If the exact key doesn't exist, return NotFound.
+// If the exact key doesn't exist, returns NotFound.
 //
 // For DupSort databases, move to the first value of the given key.
+//
+// Do not write into the returned val byte slice. Doing so will cause
+// a segfault.
 func (self *ReadOnlyCursor) SeekExactKey(key []byte) (val []byte, err error) {
 	_, val, err = self.moveAndGet1(setKey, key)
 	return val, err
@@ -191,6 +227,9 @@ func (self *ReadOnlyCursor) SeekExactKey(key []byte) (val []byte, err error) {
 //
 // If the exact key doesn't exist, move to the nearest key greater
 // than the given key.
+//
+// Do not write into the returned keyOut or val byte slices. Doing so
+// will cause a segfault.
 func (self *ReadOnlyCursor) SeekGreaterThanOrEqualKey(keyIn []byte) (keyOut, val []byte, err error) {
 	return self.moveAndGet1(setRange, keyIn)
 }

@@ -72,8 +72,8 @@ type LMDBClient struct {
 
 var _ actors.Client = (*LMDBClient)(nil)
 
-// Run a View: a read-only transaction. The transaction will be run in
-// the current go-routine, and it will only be run once. Multiple
+// Run a View: a read-only transaction. The fun will be run in the
+// current go-routine, and it will only be run once. Multiple
 // concurrent calls to View can proceed concurrently.
 //
 // As this is a read-only transaction, the transaction is aborted no
@@ -87,7 +87,7 @@ func (self *LMDBClient) View(fun func(rotxn *ReadOnlyTxn) error) (err error) {
 		defer self.resizingLock.RUnlock()
 	}
 
-	txn, err := self.environment.txnBegin(true)
+	txn, err := self.environment.txnBegin(true, nil)
 	if err != nil {
 		return err
 	}
@@ -97,17 +97,26 @@ func (self *LMDBClient) View(fun func(rotxn *ReadOnlyTxn) error) (err error) {
 	return fun(&readOnlyTxn)
 }
 
-// Run an Update: a read-write transaction. The transaction will not
-// be run in the current go-routine, and it may be run more than once,
-// even if the fun itself returns a nil error. Only a single Update
-// transaction can occur at a time, and golmdb will take care of this
-// for you. An Update transaction can proceed concurrently with one or
-// more View transactions.
+// Run an Update: a read-write transaction. The fun will not be run in
+// the current go-routine.
 //
-// If the fun returns nil, then the transaction will be committed. If
-// the fun returns any non-nil err then the transaction will be
-// aborted. Any non-nil error returned by the fun is returned from
-// this method.
+// If the fun returns a nil error, then the transaction will be
+// committed. If the fun returns any non-nil error then the
+// transaction will be aborted. Any non-nil error returned by the fun
+// is returned from this method.
+//
+// If the fun is run and returns a nil error, then it may still be run
+// more than once. In this case, its transaction will be aborted (and
+// a fresh transaction created), before it is re-run. I.e. the fun
+// will never see the state of the database *after* it has already
+// been run.
+//
+// If the fun is run and returns a non-nil error then it will not be
+// re-run.
+//
+// Only a single Update transaction can run at a time; golmdb will
+// manage this for you. An Update transaction can proceed concurrently
+// with one or more View transactions.
 //
 // Nested transactions are not supported.
 func (self *LMDBClient) Update(fun func(rwtxn *ReadWriteTxn) error) error {
@@ -222,68 +231,118 @@ func (self *server) HandleMsg(msg mailbox.Msg) error {
 }
 
 func (self *server) runBatch(batch []*readWriteTxnMsg) error {
-	if len(batch) == 0 {
+	switch batchLen := len(batch); batchLen {
+	case 0:
 		return nil
-	}
 
-	readWriteTxn := &self.readWriteTxn
+	case 1:
+		msg := batch[0]
+		for {
+			txnErr, fatalErr := self.runAndCommitWriteTxnMsg(batch, nil, msg)
+			if fatalErr != nil {
+				markBatchProcessed(batch, fatalErr)
+				return fatalErr
+			}
 
-OUTER:
-	for {
-		txn, err := self.environment.txnBegin(false)
+			if txnErr == MapFull {
+				// MapFull can come either from a Put, or from a Commit. We
+				// need to increase the size, and then re-run the entire batch.
+				fatalErr = self.increaseSize()
+				if fatalErr == nil {
+					continue
+				} else {
+					markBatchProcessed(batch, fatalErr)
+					return fatalErr
+				}
+			}
 
-		if err == nil {
-			readWriteTxn.txn = txn
+			markBatchProcessed(batch, txnErr)
+			return nil
+		}
+
+	default:
+		for batchLen > 0 {
+			outerTxn, outerErr := self.environment.txnBegin(false, nil)
+			if outerErr != nil {
+				// if we can't even create the txn, that's fatal to the whole system
+				markBatchProcessed(batch, outerErr)
+				return outerErr
+			}
 
 			for idx, msg := range batch {
 				if msg == nil {
 					continue
 				}
 
-				err = msg.txnFun(readWriteTxn)
+				innerTxnErr, innerFatalErr := self.runAndCommitWriteTxnMsg(batch, outerTxn, msg)
+				if innerFatalErr != nil {
+					markBatchProcessed(batch, innerFatalErr)
+					return innerFatalErr
+				}
 
-				if err != nil {
-					readWriteTxn.txn = nil
-					C.mdb_txn_abort(txn)
+				if innerTxnErr == MapFull {
+					outerErr = innerTxnErr
+					break
 
-					if err == MapFull {
-						break
-
-					} else {
-						// assume problem with the current msg only, so abandon
-						// that one, and rerun everything else.
-						msg.err = err
-						msg.MarkProcessed()
-						batch[idx] = nil
-
-						continue OUTER
-					}
+				} else if innerTxnErr != nil {
+					msg.err = innerTxnErr
+					msg.MarkProcessed()
+					batch[idx] = nil
+					batchLen -= 1
 				}
 			}
-		}
 
-		if err == nil {
-			readWriteTxn.txn = nil
-			err = asError(C.mdb_txn_commit(txn))
-		}
-
-		if err == MapFull {
-			// MapFull can come either from a Put, or from a Commit. We
-			// need to increase the size, and then re-run the entire batch.
-			err = self.increaseSize()
-			if err == nil {
-				continue OUTER
+			if outerErr == nil {
+				outerErr = asError(C.mdb_txn_commit(outerTxn))
+			} else {
+				C.mdb_txn_abort(outerTxn)
 			}
-		}
 
-		for _, msg := range batch {
-			if msg != nil {
-				msg.err = err
-				msg.MarkProcessed()
+			if outerErr == MapFull {
+				// MapFull can come either from a Put, or from a Commit. We
+				// need to increase the size, and then re-run the entire batch.
+				outerErr = self.increaseSize()
+				if outerErr == nil {
+					continue
+				} else {
+					markBatchProcessed(batch, outerErr)
+					return outerErr
+				}
 			}
-		}
 
-		return err
+			markBatchProcessed(batch, outerErr)
+			return nil
+		}
+		return nil
+	}
+}
+
+func (self *server) runAndCommitWriteTxnMsg(batch []*readWriteTxnMsg, parentTxn *C.MDB_txn, msg *readWriteTxnMsg) (txnErr, fatalErr error) {
+	txn, err := self.environment.txnBegin(false, parentTxn)
+	if err != nil {
+		// if we can't even create the txn, that's fatal to the whole system
+		return nil, err
+	}
+
+	readWriteTxn := &self.readWriteTxn
+	readWriteTxn.txn = txn
+	err = msg.txnFun(readWriteTxn)
+	readWriteTxn.txn = nil
+
+	if err == nil {
+		err = asError(C.mdb_txn_commit(txn))
+	} else {
+		C.mdb_txn_abort(txn)
+	}
+	return err, nil
+}
+
+func markBatchProcessed(batch []*readWriteTxnMsg, err error) {
+	for _, msg := range batch {
+		if msg != nil {
+			msg.err = err
+			msg.MarkProcessed()
+		}
 	}
 }
 

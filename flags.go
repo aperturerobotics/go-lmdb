@@ -15,18 +15,22 @@ const Version = C.MDB_VERSION_STRING
 // Used in calls to NewLMDB() and NewManagedLMDB()
 type EnvironmentFlag C.uint
 
-// Environment flags
+// Environment flags.
+//
+// NB WriteMap is not exported because it's incompatible with nested
+// transactions, and this binding internally relies on nested txns.
 //
 // See
 // http://www.lmdb.tech/doc/group__mdb__env.html and
 // http://www.lmdb.tech/doc/group__mdb.html#ga32a193c6bf4d7d5c5d579e71f22e9340
 const (
-	FixedMap    = EnvironmentFlag(C.MDB_FIXEDMAP)
-	NoSubDir    = EnvironmentFlag(C.MDB_NOSUBDIR)
-	NoSync      = EnvironmentFlag(C.MDB_NOSYNC)
-	ReadOnly    = EnvironmentFlag(C.MDB_RDONLY)
-	NoMetaSync  = EnvironmentFlag(C.MDB_NOMETASYNC)
-	WriteMap    = EnvironmentFlag(C.MDB_WRITEMAP)
+	FixedMap   = EnvironmentFlag(C.MDB_FIXEDMAP)
+	NoSubDir   = EnvironmentFlag(C.MDB_NOSUBDIR)
+	NoSync     = EnvironmentFlag(C.MDB_NOSYNC)
+	ReadOnly   = EnvironmentFlag(C.MDB_RDONLY)
+	NoMetaSync = EnvironmentFlag(C.MDB_NOMETASYNC)
+	// Not exported because it's incompatible with nested txns
+	writeMap    = EnvironmentFlag(C.MDB_WRITEMAP)
 	MapAsync    = EnvironmentFlag(C.MDB_MAPASYNC)
 	NoTLS       = EnvironmentFlag(C.MDB_NOTLS)
 	NoLock      = EnvironmentFlag(C.MDB_NOLOCK)

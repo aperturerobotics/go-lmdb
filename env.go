@@ -88,14 +88,12 @@ func (self *environment) setMaxNumberOfDBs(max uint) error {
 }
 
 // mdb_txn_begin. http://www.lmdb.tech/doc/group__mdb.html#gad7ea55da06b77513609efebd44b26920
-// This wrapping does not support nested transactions, so there is no
-// provision for providing the parent transaction.
-func (self *environment) txnBegin(readOnlyTxn bool) (txn *C.MDB_txn, err error) {
+func (self *environment) txnBegin(readOnlyTxn bool, parentTxn *C.MDB_txn) (txn *C.MDB_txn, err error) {
 	flags := C.uint(0)
 	if readOnlyTxn {
 		flags = C.uint(ReadOnly)
 	}
-	err = asError(C.mdb_txn_begin(self.env, nil, flags, &txn))
+	err = asError(C.mdb_txn_begin(self.env, parentTxn, flags, &txn))
 	return
 }
 
@@ -122,10 +120,9 @@ func (self *environment) copy(path string, compact bool) error {
 // NewLMDB opens an LMDB database at the given path, creating it if
 // necessary, and returns a client to that LMDB database.
 //
-// NoTLS is always added to the flags automatically. A sensible
-// default flag to use is WriteMap. Adding NoReadAhead will probably
-// if you expect your dataset to grow large (especially larger than
-// RAM).
+// NoTLS is always added to the flags automatically. The value 0 is a
+// perfectly sensible default. Using NoReadAhead will probably help if
+// you expect your dataset to grow large (especially larger than RAM).
 //
 // If the flags include ReadOnly then the database is opened in
 // read-only mode, and all calls to Update will immediately return an

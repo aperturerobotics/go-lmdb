@@ -52,7 +52,7 @@ func createDatabase(log zerolog.Logger, batchSize uint) (client *golmdb.LMDBClie
 		return nil, "", err
 	}
 
-	client, err = golmdb.NewLMDB(log, dir, 0666, 100, 4, golmdb.WriteMap|golmdb.NoReadAhead, batchSize)
+	client, err = golmdb.NewLMDB(log, dir, 0666, 100, 4, golmdb.NoReadAhead, batchSize)
 	if err != nil {
 		return nil, "", err
 	}
@@ -274,7 +274,7 @@ func TestWriteReadDelete(t *testing.T) {
 
 	// now close the database and reopen it readonly
 	client.TerminateSync()
-	client2, err := golmdb.NewLMDB(log, dir, 0666, 16, 4, golmdb.WriteMap|golmdb.NoReadAhead|golmdb.ReadOnly, 16)
+	client2, err := golmdb.NewLMDB(log, dir, 0666, 16, 4, golmdb.NoReadAhead|golmdb.ReadOnly, 16)
 	is.NoErr(err)
 	defer client2.TerminateSync()
 
@@ -768,6 +768,7 @@ func TestDupDB(t *testing.T) {
 		}
 
 		binary.BigEndian.PutUint64(key, 31)
+		val = make([]byte, 8)
 		binary.BigEndian.PutUint64(val, 3)
 		err = cursor.SeekExactKeyAndValue(key, val)
 		if err != nil {
