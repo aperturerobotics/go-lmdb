@@ -134,6 +134,77 @@ func TestDBRef(t *testing.T) {
 	is.True(bytes.Equal(val2, []byte("world")))
 }
 
+func TestEmptyDrop(t *testing.T) {
+	SetGlobalLogLevelDebug()
+	log := NewTestLogger(t)
+	is := is.New(t)
+
+	client, dir, err := createDatabase(log, 16)
+	is.NoErr(err)
+	defer os.RemoveAll(dir)
+	defer client.TerminateSync()
+
+	key := []byte(`hello`)
+	value := []byte(`world`)
+	err = client.Update(func(txn *golmdb.ReadWriteTxn) error {
+		dbRef, err := txn.DBRef(t.Name(), golmdb.Create)
+		if err != nil {
+			return err
+		}
+		if err = txn.Put(dbRef, key, value, golmdb.NoOverwrite); err != nil {
+			return err
+		}
+		return nil
+	})
+	is.NoErr(err)
+
+	// empty
+	err = client.Update(func(txn *golmdb.ReadWriteTxn) error {
+		dbRef, err := txn.DBRef(t.Name(), 0) // should still be there
+		if err != nil {
+			return err
+		}
+		if vals, err := txn.Get(dbRef, key); err != nil {
+			return err
+		} else if !bytes.Equal(value, vals) {
+			return fmt.Errorf("Fetched value did not match expectation.")
+		}
+		if err = txn.Empty(dbRef); err != nil {
+			return err
+		}
+		if _, err := txn.Get(dbRef, key); err == nil {
+			return fmt.Errorf("Key-value pair still exists after emptying db.")
+		} else if err == golmdb.NotFound {
+			return nil
+		} else {
+			return err
+		}
+	})
+	is.NoErr(err)
+
+	// drop
+	err = client.Update(func(txn *golmdb.ReadWriteTxn) error {
+		dbRef, err := txn.DBRef(t.Name(), 0) // should still be there
+		if err != nil {
+			return err
+		}
+		if _, err := txn.Get(dbRef, key); err == nil {
+			return fmt.Errorf("Key-value pair still exists after emptying db.")
+		} else if err != golmdb.NotFound {
+			return err
+		}
+		if err = txn.Drop(dbRef); err != nil {
+			return err
+		}
+		dbRef, err = txn.DBRef(t.Name(), 0) // should still be there
+		if err == nil {
+			return fmt.Errorf("Should have got error when trying to refresh dbRef after drop")
+		}
+		return nil
+	})
+	is.NoErr((err))
+}
+
 func TestWriteReadDelete(t *testing.T) {
 	SetGlobalLogLevelDebug()
 	log := NewTestLogger(t)

@@ -63,6 +63,30 @@ func (self *ReadOnlyTxn) DBRef(name string, flags DatabaseFlag) (DBRef, error) {
 	return DBRef(dbRef), nil
 }
 
+// Empty the database. All key-value pairs are removed from the
+// database.
+//
+// See
+// http://www.lmdb.tech/doc/group__mdb.html#gab966fab3840fc54a6571dfb32b00f2db
+func (self *ReadWriteTxn) Empty(db DBRef) error {
+	return self.emptyOrDrop(db, 0)
+}
+
+// Drop the database. Not only are all key-value pairs removed from
+// the database, but the database itself is removed, which means
+// calling DBRef(name,0) will fail: the database will need to be
+// recreated before it can be used again.
+//
+// See
+// http://www.lmdb.tech/doc/group__mdb.html#gab966fab3840fc54a6571dfb32b00f2db
+func (self *ReadWriteTxn) Drop(db DBRef) error {
+	return self.emptyOrDrop(db, 1)
+}
+
+func (self *ReadWriteTxn) emptyOrDrop(db DBRef, flag C.int) error {
+	return asError(C.mdb_drop(self.txn, C.MDB_dbi(db), flag))
+}
+
 // Get the value corresponding to the key from the database.
 //
 // The returned bytes are owned by the database. Do not modify
