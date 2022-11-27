@@ -149,7 +149,10 @@ func (self *LMDBClient) Update(fun func(rwtxn *ReadWriteTxn) error) error {
 //
 // Note that this does not call mdb_env_sync. So if you've opened the
 // database with NoSync or NoMetaSync or MapAsync then you will need
-// to call Sync() before TerminateSync()
+// to call Sync() before TerminateSync(); the Sync in TerminateSync
+// merely refers to the fact this method is synchronous - it'll only
+// return once the actor has fully terminated and the LMDB database
+// has been closed.
 func (self *LMDBClient) TerminateSync() {
 	if !self.environment.readOnly {
 		self.ClientBase.TerminateSync()

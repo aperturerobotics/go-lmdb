@@ -135,9 +135,9 @@ func (self *environment) copy(path string, compact bool) error {
 // together. This is a maximum: if the actor has received some smaller
 // number of Update transactions and there are no further Update
 // transactions queued up, then it'll run and commit what it's
-// received immediately. A reasonable starting value for batchSize is
-// the number of go-routines that could concurrently submit Update
-// transactions.
+// received without further delay. A reasonable starting value for
+// batchSize is the number of go-routines that could concurrently
+// submit Update transactions.
 func NewLMDB(log zerolog.Logger, path string, mode fs.FileMode, numReaders, numDBs uint, flags EnvironmentFlag, batchSize uint) (*LMDBClient, error) {
 	environment, err := setupEnvironment(path, mode, numReaders, numDBs, flags)
 	if err != nil {
