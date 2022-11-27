@@ -21,20 +21,19 @@ This binding is high-level. It does not attempt to support all the
 features of LMDB, nor expose the full low-level LMDB API. It provides:
 
 * batching of updates: read-write transactions will be batched
-  together automatically. This allows you to control (to some extent)
-  the trade-off between latency and throughput: smaller batches can
-  mean a longer queue of update transactions forming which can
-  increase latency. But, larger batches can introduce their own delays
-  as commits can be spread further apart.
+  together automatically up to some limit set by a parameter. This
+  allows you to control (to some extent) the trade-off between latency
+  and throughput: smaller batches will result in more fsyncs going on,
+  but may reduce latency; larger batches may increase latency, but
+  there will be fewer fsyncs.
 * automatic resizing: LMDB returns an error if its database file fills
   up. LMDB also has an API to increase the size of its database file.
-  Many modern file-systems support _sparse files_ which make it
-  possible to create a huge empty file which only uses the amount of
-  data that has been written. For such file-systems, it's very
-  reasonable to start with a very large file. But not all file-systems
-  support _sparse files_. So for better portability, it's preferable
-  to support using smaller file sizes, and dynamically increase the
-  size as necessary. This binding handles that automatically.
+  In general LMDB recommends starting with a huge file size for its
+  database, and relying on the underlying filesystem supporting sparse
+  files, which most modern file systems do. However, there's still
+  always the risk that you end up putting in more data than you
+  thought you would, so this binding automatically copes and increases
+  the size when necessary.
 * minimal copy of data from Go to C and back again. In most cases,
   Puts of a key-value pair can be written directly to disk without
   further copies being taken. Reads can access the data on disk with
