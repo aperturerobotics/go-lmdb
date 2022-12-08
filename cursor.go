@@ -8,12 +8,14 @@ package golmdb
 */
 import "C"
 import (
+	"sync/atomic"
 	"unsafe"
 )
 
 // Cursors allow you to walk over a database, or sections of them.
 type ReadOnlyCursor struct {
-	cursor *C.MDB_cursor
+	cursor         *C.MDB_cursor
+	resizeRequired *uint32
 }
 
 // A ReadWriteCursor extends ReadOnlyCursor with methods for mutating
@@ -34,12 +36,15 @@ type ReadWriteCursor struct {
 //
 // See http://www.lmdb.tech/doc/group__mdb.html#ga9ff5d7bd42557fd5ee235dc1d62613aa
 func (self *ReadOnlyTxn) NewCursor(db DBRef) (*ReadOnlyCursor, error) {
+	if atomic.LoadUint32(self.resizeRequired) == 1 {
+		return nil, MapFull
+	}
 	var cursor *C.MDB_cursor
 	err := asError(C.mdb_cursor_open(self.txn, C.MDB_dbi(db), &cursor))
 	if err != nil {
 		return nil, err
 	}
-	return &ReadOnlyCursor{cursor: cursor}, nil
+	return &ReadOnlyCursor{cursor: cursor, resizeRequired: self.resizeRequired}, nil
 }
 
 // Create a new read-write cursor.
@@ -59,7 +64,7 @@ func (self *ReadWriteTxn) NewCursor(db DBRef) (*ReadWriteCursor, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &ReadWriteCursor{ReadOnlyCursor{cursor: cursor}}, nil
+	return &ReadWriteCursor{ReadOnlyCursor{cursor: cursor, resizeRequired: self.resizeRequired}}, nil
 }
 
 // Close the current cursor.
@@ -72,6 +77,9 @@ func (self *ReadOnlyCursor) Close() {
 }
 
 func (self *ReadOnlyCursor) moveAndGet0(op cursorOp) (key, val []byte, err error) {
+	if atomic.LoadUint32(self.resizeRequired) == 1 {
+		return nil, nil, MapFull
+	}
 	var keyVal, valVal value
 	err = asError(C.mdb_cursor_get(self.cursor, (*C.MDB_val)(&keyVal), (*C.MDB_val)(&valVal), C.MDB_cursor_op(op)))
 	if err != nil {
@@ -82,6 +90,9 @@ func (self *ReadOnlyCursor) moveAndGet0(op cursorOp) (key, val []byte, err error
 }
 
 func (self *ReadOnlyCursor) moveAndGet1(op cursorOp, keyIn []byte) (key, val []byte, err error) {
+	if atomic.LoadUint32(self.resizeRequired) == 1 {
+		return nil, nil, MapFull
+	}
 	var keyVal, valVal value
 	err = asError(C.golmdb_mdb_cursor_get1(self.cursor,
 		(*C.char)(unsafe.Pointer(&keyIn[0])), C.size_t(len(keyIn)),
@@ -94,6 +105,9 @@ func (self *ReadOnlyCursor) moveAndGet1(op cursorOp, keyIn []byte) (key, val []b
 }
 
 func (self *ReadOnlyCursor) moveAndGet2(op cursorOp, keyIn, valIn []byte) (val []byte, err error) {
+	if atomic.LoadUint32(self.resizeRequired) == 1 {
+		return nil, MapFull
+	}
 	var valVal value
 	err = asError(C.golmdb_mdb_cursor_get2(self.cursor,
 		(*C.char)(unsafe.Pointer(&keyIn[0])), C.size_t(len(keyIn)),
@@ -244,6 +258,9 @@ func (self *ReadOnlyCursor) SeekExactKeyAndValue(keyIn, valIn []byte) (err error
 
 // Only for DupSort. Return the number values with the current key.
 func (self *ReadOnlyCursor) Count() (count uint64, err error) {
+	if atomic.LoadUint32(self.resizeRequired) == 1 {
+		return 0, MapFull
+	}
 	err = asError(C.mdb_cursor_count(self.cursor, (*C.size_t)(&count)))
 	if err != nil {
 		return 0, err

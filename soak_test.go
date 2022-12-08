@@ -160,17 +160,23 @@ func runViewer(allViewersFinishedWG, viewersStartedWG *sync.WaitGroup, client *g
 	err := client.View(func(rotxn *golmdb.ReadOnlyTxn) (err error) {
 		viewersStartedWG.Done()
 		for idx, key := range toCheck {
-			expected := keyValueMapSnapshot[key]
 			val, err := rotxn.Get(dbRef, key[:])
 			if err != nil {
 				return err
 			}
+			expected := keyValueMapSnapshot[key]
 			if !bytes.Equal(expected[:], val) {
 				return fmt.Errorf("(%d) For key %v, expected %v, got %v", idx, key, expected[:], val)
 			}
 		}
 		return err
 	})
+	if err == golmdb.MapFull {
+		// nothing really we can do: the snapshot is no longer
+		// accessible to us - restarting the txn won't get us back
+		// there.
+		return
+	}
 	if err != nil {
 		errLock.Lock()
 		*errs = append(*errs, err)

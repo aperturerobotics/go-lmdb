@@ -8,6 +8,7 @@ package golmdb
 */
 import "C"
 import (
+	"sync/atomic"
 	"unsafe"
 )
 
@@ -30,7 +31,8 @@ func (self *value) bytesNoCopy() []byte {
 }
 
 type ReadOnlyTxn struct {
-	txn *C.MDB_txn
+	txn            *C.MDB_txn
+	resizeRequired *uint32
 }
 
 // A ReadWriteTxn extends ReadOnlyTxn with methods for mutating the
@@ -53,6 +55,9 @@ type ReadWriteTxn struct {
 // See
 // http://www.lmdb.tech/doc/group__mdb.html#gac08cad5b096925642ca359a6d6f0562a
 func (self *ReadOnlyTxn) DBRef(name string, flags DatabaseFlag) (DBRef, error) {
+	if atomic.LoadUint32(self.resizeRequired) == 1 {
+		return 0, MapFull
+	}
 	cName := C.CString(name)
 	defer C.free(unsafe.Pointer(cName))
 	var dbRef C.MDB_dbi
@@ -97,6 +102,9 @@ func (self *ReadWriteTxn) emptyOrDrop(db DBRef, flag C.int) error {
 // See
 // http://www.lmdb.tech/doc/group__mdb.html#ga8bf10cd91d3f3a83a34d04ce6b07992d
 func (self *ReadOnlyTxn) Get(db DBRef, key []byte) ([]byte, error) {
+	if atomic.LoadUint32(self.resizeRequired) == 1 {
+		return nil, MapFull
+	}
 	var data value
 	err := asError(C.golmdb_mdb_get(
 		self.txn, C.MDB_dbi(db),

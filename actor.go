@@ -8,6 +8,7 @@ import (
 	"errors"
 	"runtime"
 	"sync"
+	"sync/atomic"
 
 	"github.com/rs/zerolog"
 	"wellquite.org/actors"
@@ -22,8 +23,10 @@ type readWriteTxnMsg struct {
 
 func readOnlyLMDBClient(environment *environment) *LMDBClient {
 	environment.readOnly = true
+	resizeRequired := uint32(0)
 	return &LMDBClient{
-		environment: environment,
+		environment:    environment,
+		resizeRequired: &resizeRequired,
 	}
 }
 
@@ -46,9 +49,10 @@ func spawnLMDBActor(manager actors.ManagerClient, log *zerolog.Logger, environme
 	}
 
 	return &LMDBClient{
-		ClientBase:   clientBase,
-		environment:  environment,
-		resizingLock: server.resizingLock,
+		ClientBase:     clientBase,
+		environment:    environment,
+		resizingLock:   server.resizingLock,
+		resizeRequired: &server.resizeRequired,
 		readWriteTxnMsgPool: &sync.Pool{
 			New: func() interface{} {
 				return &readWriteTxnMsg{}
@@ -67,6 +71,7 @@ type LMDBClient struct {
 	*actors.ClientBase
 	environment         *environment
 	resizingLock        *sync.RWMutex
+	resizeRequired      *uint32
 	readWriteTxnMsgPool *sync.Pool
 }
 
@@ -91,7 +96,10 @@ func (self *LMDBClient) View(fun func(rotxn *ReadOnlyTxn) error) (err error) {
 	if err != nil {
 		return err
 	}
-	readOnlyTxn := ReadOnlyTxn{txn: txn}
+	readOnlyTxn := ReadOnlyTxn{
+		txn:            txn,
+		resizeRequired: self.resizeRequired,
+	}
 	// use a defer as it'll run even on a panic
 	defer C.mdb_txn_abort(txn)
 	return fun(&readOnlyTxn)
@@ -199,11 +207,12 @@ func (self *LMDBClient) Copy(path string, compact bool) error {
 type server struct {
 	actors.ServerBase
 
-	batchSize    int
-	batch        []*readWriteTxnMsg
-	resizingLock *sync.RWMutex
-	environment  *environment
-	readWriteTxn ReadWriteTxn
+	batchSize      int
+	batch          []*readWriteTxnMsg
+	resizingLock   *sync.RWMutex
+	resizeRequired uint32
+	environment    *environment
+	readWriteTxn   ReadWriteTxn
 }
 
 var _ actors.Server = (*server)(nil)
@@ -211,6 +220,8 @@ var _ actors.Server = (*server)(nil)
 func (self *server) Init(log zerolog.Logger, mailboxReader *mailbox.MailboxReader, selfClient *actors.ClientBase) (err error) {
 	// this is required for the writer - even though we use NoTLS
 	runtime.LockOSThread()
+	readWriteTxn := &self.readWriteTxn
+	readWriteTxn.resizeRequired = &self.resizeRequired
 	return self.ServerBase.Init(log, mailboxReader, selfClient)
 }
 
@@ -358,8 +369,10 @@ func (self *server) Terminated(err error, caughtPanic interface{}) {
 }
 
 func (self *server) increaseSize() error {
+	atomic.StoreUint32(&self.resizeRequired, 1)
 	self.resizingLock.Lock()
 	defer self.resizingLock.Unlock()
+	defer atomic.StoreUint32(&self.resizeRequired, 0)
 
 	currentMapSize := self.environment.mapSize
 	mapSize := uint64(float64(currentMapSize) * 1.5)
