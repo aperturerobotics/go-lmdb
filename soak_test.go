@@ -157,26 +157,27 @@ func makeAllKeys(rng *rand.Rand) ([][8]byte, map[[8]byte][8]byte) {
 
 func runViewer(allViewersFinishedWG, viewersStartedWG *sync.WaitGroup, client *golmdb.LMDBClient, dbRef golmdb.DBRef, toCheck [][8]byte, keyValueMapSnapshot map[[8]byte][8]byte, errLock *sync.Mutex, errs *[]error) {
 	defer allViewersFinishedWG.Done()
+	started := false
 	err := client.View(func(rotxn *golmdb.ReadOnlyTxn) (err error) {
-		viewersStartedWG.Done()
-		for idx, key := range toCheck {
-			val, err := rotxn.Get(dbRef, key[:])
-			if err != nil {
-				return err
-			}
-			expected := keyValueMapSnapshot[key]
-			if !bytes.Equal(expected[:], val) {
-				return fmt.Errorf("(%d) For key %v, expected %v, got %v", idx, key, expected[:], val)
+		if !started {
+			started = true
+			viewersStartedWG.Done()
+			for idx, key := range toCheck {
+				val, err := rotxn.Get(dbRef, key[:])
+				if err != nil {
+					return err
+				}
+				expected := keyValueMapSnapshot[key]
+				if !bytes.Equal(expected[:], val) {
+					return fmt.Errorf("(%d) For key %v, expected %v, got %v", idx, key, expected[:], val)
+				}
 			}
 		}
+		// nothing we can do if we're already started (i.e. the txn has
+		// been automatically restarted): the snapshot we wanted is no
+		// longer accessible to us.
 		return err
 	})
-	if err == golmdb.MapFull {
-		// nothing really we can do: the snapshot is no longer
-		// accessible to us - restarting the txn won't get us back
-		// there.
-		return
-	}
 	if err != nil {
 		errLock.Lock()
 		*errs = append(*errs, err)

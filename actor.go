@@ -78,8 +78,11 @@ type LMDBClient struct {
 var _ actors.Client = (*LMDBClient)(nil)
 
 // Run a View: a read-only transaction. The fun will be run in the
-// current go-routine, and it will only be run once. Multiple
-// concurrent calls to View can proceed concurrently.
+// current go-routine. Multiple concurrent calls to View can proceed
+// concurrently. If there are write transactions going on
+// concurrently, they may cause MapFull excetptions. If this happens,
+// all read transactions will be interrupted and aborted, and will
+// automatically be restarted.
 //
 // As this is a read-only transaction, the transaction is aborted no
 // matter what the fun returns. The error that the fun returns is
@@ -102,7 +105,13 @@ func (self *LMDBClient) View(fun func(rotxn *ReadOnlyTxn) error) (err error) {
 	}
 	// use a defer as it'll run even on a panic
 	defer C.mdb_txn_abort(txn)
-	return fun(&readOnlyTxn)
+	for {
+		err := fun(&readOnlyTxn)
+		if err == MapFull {
+			continue
+		}
+		return err
+	}
 }
 
 // Run an Update: a read-write transaction. The fun will not be run in
@@ -260,7 +269,7 @@ func (self *server) runBatch(batch []*readWriteTxnMsg) error {
 
 			if txnErr == MapFull {
 				// MapFull can come either from a Put, or from a Commit. We
-				// need to increase the size, and then re-run the entire batch.
+				// need to increase the size, and then re-run the txn.
 				fatalErr = self.increaseSize()
 				if fatalErr == nil {
 					continue
@@ -294,7 +303,7 @@ func (self *server) runBatch(batch []*readWriteTxnMsg) error {
 					return innerFatalErr
 				}
 
-				if innerTxnErr == MapFull {
+				if innerTxnErr == MapFull || innerTxnErr == TxnFull {
 					outerErr = innerTxnErr
 					break
 
@@ -322,6 +331,19 @@ func (self *server) runBatch(batch []*readWriteTxnMsg) error {
 					markBatchProcessed(batch, outerErr)
 					return outerErr
 				}
+
+			} else if outerErr == TxnFull {
+				// they've all been aborted; we switch to attempting them
+				// 1-by-1 in the hope that individually, they will not
+				// overfill transactions.
+				for idx := 0; idx < batchLen; idx++ {
+					fatalErr := self.runBatch(batch[idx : idx+1])
+					if fatalErr != nil {
+						markBatchProcessed(batch[idx+1:], fatalErr)
+						return fatalErr
+					}
+				}
+				return nil
 			}
 
 			markBatchProcessed(batch, outerErr)

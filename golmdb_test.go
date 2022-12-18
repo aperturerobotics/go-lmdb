@@ -703,8 +703,19 @@ func TestDupDB(t *testing.T) {
 			binary.BigEndian.PutUint64(key, uint64(idx))
 			for idy := 0; idy < idx; idy++ {
 				binary.BigEndian.PutUint64(val, uint64(idy))
+				if err = txn.Put(dbRef, key, val, golmdb.NoDupData); err != nil {
+					return err
+				}
+				// Put it twice, just so that we know for sure that we
+				// don't get duplicated key-value pairs. I.e. NoDupData is
+				// somewhat misnamed - data is never duplicated!
 				if err = txn.Put(dbRef, key, val, 0); err != nil {
 					return err
+				}
+				if err = txn.Put(dbRef, key, val, golmdb.NoDupData); err == golmdb.KeyExist {
+					err = nil
+				} else {
+					return fmt.Errorf("Expected KeyExist error, but got %v", err)
 				}
 			}
 		}
