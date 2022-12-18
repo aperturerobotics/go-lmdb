@@ -108,6 +108,9 @@ func (self *LMDBClient) View(fun func(rotxn *ReadOnlyTxn) error) (err error) {
 	for {
 		err := fun(&readOnlyTxn)
 		if err == MapFull {
+			// unlock and wait to relock so that the server can resize.
+			self.resizingLock.RUnlock()
+			self.resizingLock.RLock()
 			continue
 		}
 		return err
