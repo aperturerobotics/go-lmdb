@@ -43,7 +43,42 @@ type DatabaseFlag C.uint
 
 // Database flags
 //
-// See http://www.lmdb.tech/doc/group__mdb__dbi__open.html
+// The default (0 flags) is for the key to be of variable length, and
+// to be sorted lexicographically ascending. Each key can only have
+// one value. Note that any key cannot be longer than 511 bytes -
+// changing this will require a custom compilation of LMDB itself.
+//
+// ReverseKey sets the key to be of variable length as default, but
+// sorted lexicographically descending.
+//
+// IntegerKey makes the keys be interpreted as integers, most likely
+// 32-bit unsigned ints on 32-bit systems, and 64-bit unsigned on
+// 64-bit systems. The keys must all be of the same size. LMDB
+// interprets these unsigned ints (for the purpose of sorting and
+// searching) in "native endianness". The authors of Go, Rob Pike in
+// particular, don't like this concept -
+// https://commandcenter.blogspot.com/2012/04/byte-order-fallacy.html
+// - so it's basically up to you to know that x86 is Little Endian,
+// and so you should be using `binary.LittleEndian` to do the
+// encoding. If you're running code on a Big Endian architecture then
+// you'll need to know that.
+//
+// DupSort says that a single key can have multiple values. Note when
+// using this that the key _and_ the value together must be less than
+// 511 bytes.
+//
+// With DupSort, you can add other flags:
+//
+// IntegerDup says that the values should be treated as unsigned
+// ints. Not that this must be used in combination with DupSort, and
+// it does not imply IntegerKey: the keys can still be variable-length
+// byte slices if you wish.
+//
+// Similarly, ReverseDup and DupFixed affect the sorting of values
+// within a common key, and must be used in combination with DupSort,
+// but do not imply anything about the nature of the keys.
+//
+// See also http://www.lmdb.tech/doc/group__mdb__dbi__open.html
 const (
 	ReverseKey = DatabaseFlag(C.MDB_REVERSEKEY)
 	DupSort    = DatabaseFlag(C.MDB_DUPSORT)

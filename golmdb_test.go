@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"math/rand"
 	"os"
+	"sort"
 	"testing"
 	"unsafe"
 
@@ -1034,4 +1036,55 @@ func TestLexicalSort(t *testing.T) {
 	key, err = findLastKeyWithPrefix(bar)
 	is.NoErr(err)
 	is.True(bytes.Equal(key, bar1))
+}
+
+func TestIntegerSort(t *testing.T) {
+	SetGlobalLogLevelDebug()
+	log := NewTestLogger(t)
+	is := is.New(t)
+
+	client, dir, err := createDatabase(log, 16)
+	is.NoErr(err)
+	defer os.RemoveAll(dir)
+	defer client.TerminateSync()
+
+	dbRef, err := createDBRef(client, t.Name(), golmdb.IntegerKey)
+	is.NoErr(err)
+
+	keys := rand.Perm(128)
+	keyBytes := make([]byte, 8)
+	for i, key := range keys {
+		key *= 1024
+		keys[i] = key
+		err := client.Update(func(rwtxn *golmdb.ReadWriteTxn) error {
+			binary.LittleEndian.PutUint64(keyBytes, uint64(key))
+			return rwtxn.Put(dbRef, keyBytes, keyBytes, golmdb.NoOverwrite)
+		})
+		is.NoErr(err)
+	}
+
+	sort.Ints(keys)
+
+	err = client.View(func(rotxn *golmdb.ReadOnlyTxn) error {
+		cursor, err := rotxn.NewCursor(dbRef)
+		if err != nil {
+			return err
+		}
+		defer cursor.Close()
+
+		idx := len(keys) - 1
+		for key, _, err := cursor.Last(); err == nil; key, _, err = cursor.Prev() {
+			keyNum := binary.LittleEndian.Uint64(key)
+			is.Equal(keyNum, uint64(keys[idx]))
+			idx -= 1
+		}
+		if err == golmdb.NotFound {
+			err = nil
+		}
+		is.NoErr(err)
+		is.Equal(idx, -1)
+		return nil
+	})
+	is.NoErr(err)
+
 }
