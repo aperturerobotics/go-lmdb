@@ -229,7 +229,7 @@ type server struct {
 
 var _ actors.Server = (*server)(nil)
 
-func (self *server) Init(log zerolog.Logger, mailboxReader *mailbox.MailboxReader, selfClient *actors.ClientBase) (err error) {
+func (self *server) Init(log zerolog.Logger, mailboxReader *mailbox.MailboxReader[any], selfClient *actors.ClientBase) (err error) {
 	// this is required for the writer - even though we use NoTLS
 	runtime.LockOSThread()
 	readWriteTxn := &self.readWriteTxn
@@ -237,7 +237,7 @@ func (self *server) Init(log zerolog.Logger, mailboxReader *mailbox.MailboxReade
 	return self.ServerBase.Init(log, mailboxReader, selfClient)
 }
 
-func (self *server) HandleMsg(msg mailbox.Msg) error {
+func (self *server) HandleMsg(msg any) error {
 	switch msgT := msg.(type) {
 	case *readWriteTxnMsg:
 		self.batch = append(self.batch, msgT)
